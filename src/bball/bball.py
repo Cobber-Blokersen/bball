@@ -2,13 +2,46 @@ from ortools.sat.python import cp_model
 from rich.console import Console
 from rich.table import Table
 
+PLAYERS = ["Indie", "Scarlett", "Mila", "Katrina",
+           "Annabelle", "Hannah", "Sanavi", "Bhakti"]
+
+POWER_COMBOS = [
+    ["Mila", "Katrina", "Hannah"],
+    # ["Hannah", "Sanavi"],
+]
+
+STARTING_LINEUP = ["Indie", "Hannah", "Bhakti", "Annabelle", "Sanavi"]
+MUST_BE_ON_IN_FINAL_PERIOD = "Mila"
+
+PLAYER_COLORS = [
+    "red",
+    "white",
+    "cyan",
+    "yellow",
+    "green",
+    "blue",
+    "bright_magenta",
+    "orange1",
+]
+
+
+def format_player_name(player_name: str) -> str:
+    if player_name in PLAYERS:
+        player_index = PLAYERS.index(player_name)
+        color = PLAYER_COLORS[player_index % len(PLAYER_COLORS)]
+    else:
+        color = "white"
+    return f"[{color}]{player_name}[/{color}]"
+
+
+def format_player_names(player_names: list[str]) -> str:
+    return ", ".join(format_player_name(player_name) for player_name in sorted(player_names))
+
 
 def main():
     # --- Basic setup ---
-    players = ["Indie", "Scarlett", "Mila", "Katrina",
-               "Annabelle", "Hannah", "Sanavi", "Bhakti"]
-        
-    num_players = len(players)
+    num_players = len(PLAYERS)
+    player_indices = {player_name: index for index, player_name in enumerate(PLAYERS)}
 
     periods_per_half = 6  # or 5 – you can make this a parameter
     num_halves = 2
@@ -74,18 +107,15 @@ def main():
             )
 
     # --- Starting lineup: Period 0 (first period) ---
-    # Start on: Indie(0), Scarlett(1), Mila(2), Annabelle(4), Sanavi(6)
-    # starting_lineup = ["Indie", "Scarlett", "Mila", "Annabelle", "Sanavi"]
-    starting_lineup = ["Katrina", "Bhakti", "Indie", "Scarlett", "Sanavi"]
-    for player_idx, player_name in enumerate(players):
-        if player_name in starting_lineup:
+    for player_idx, player_name in enumerate(PLAYERS):
+        if player_name in STARTING_LINEUP:
             model.add(is_on_court[(player_idx, 0)] == 1)
         else:
             model.add(is_on_court[(player_idx, 0)] == 0)
 
-    # --- Mila must be on court in final period ---
-    mila_index = players.index("Mila")
-    model.add(is_on_court[(mila_index, num_periods - 1)] == 1)
+    # --- A designated player must be on court in the final period ---
+    final_period_required_player_idx = player_indices[MUST_BE_ON_IN_FINAL_PERIOD]
+    model.add(is_on_court[(final_period_required_player_idx, num_periods - 1)] == 1)
 
     # --- Players who start OFF in Period 0 must not also start OFF in first period of second half ---
     # First period of second half = period periods_per_half
@@ -104,37 +134,18 @@ def main():
             [is_on_court[(player_idx, 0)], is_on_court[(player_idx, num_periods - 1)]]
         )
 
-    # --- Objective term 1: maximise periods where Mila and Katrina are on together ---
-    katrina_index = players.index("Katrina")
-    mila_katrina_together_flags = []
-    for period_idx in range(num_periods):
-        mila_katrina_both_on = model.new_bool_var(f"mila_kat_t{period_idx}")
-        # mila_katrina_both_on == 1 iff Mila and Katrina are both on court.
-        model.add(
-            is_on_court[(mila_index, period_idx)] + is_on_court[(katrina_index, period_idx)]
-            == 2
-        ).only_enforce_if(mila_katrina_both_on)
-        model.add(
-            is_on_court[(mila_index, period_idx)] + is_on_court[(katrina_index, period_idx)]
-            != 2
-        ).only_enforce_if(mila_katrina_both_on.Not())
-        mila_katrina_together_flags.append(mila_katrina_both_on)
-
-    # --- Objective term 3: prefer Hannah and Sanavi on court together ---
-    hannah_index = players.index("Hannah")
-    sanavi_index = players.index("Sanavi")
-    hannah_sanavi_together_flags = []
-    for period_idx in range(num_periods):
-        hannah_sanavi_both_on = model.new_bool_var(f"han_san_t{period_idx}")
-        model.add(
-            is_on_court[(hannah_index, period_idx)] + is_on_court[(sanavi_index, period_idx)]
-            == 2
-        ).only_enforce_if(hannah_sanavi_both_on)
-        model.add(
-            is_on_court[(hannah_index, period_idx)] + is_on_court[(sanavi_index, period_idx)]
-            != 2
-        ).only_enforce_if(hannah_sanavi_both_on.Not())
-        hannah_sanavi_together_flags.append(hannah_sanavi_both_on)
+    # --- Objective term 1: prefer periods where any configured power combo is on together ---
+    power_combo_together_flags = []
+    for combo_index, power_combo in enumerate(POWER_COMBOS):
+        combo_flags = []
+        combo_player_indices = [player_indices[player_name] for player_name in power_combo]
+        for period_idx in range(num_periods):
+            combo_on = model.new_bool_var(f"power_combo_{combo_index}_t{period_idx}")
+            players_on = sum(is_on_court[(player_idx, period_idx)] for player_idx in combo_player_indices)
+            model.add(players_on == len(power_combo)).only_enforce_if(combo_on)
+            model.add(players_on != len(power_combo)).only_enforce_if(combo_on.Not())
+            combo_flags.append(combo_on)
+        power_combo_together_flags.append(combo_flags)
 
     # --- Objective term 2: balance each player's off-court periods across halves ---
     # Minimising |off_first_half - off_second_half| is equivalent to minimising
@@ -166,18 +177,23 @@ def main():
         model.add_abs_equality(half_split_abs_diff, half_split_diff)
         off_balance_penalties.append(half_split_abs_diff)
 
+    # --- Objective term 2: prefer any configured power combo to be together ---
+    power_combo_period_flags = []
+    for period_idx in range(num_periods):
+        period_power_combo = model.new_bool_var(f"period_power_combo_t{period_idx}")
+        combo_flags_for_period = [combo_flags[period_idx] for combo_flags in power_combo_together_flags]
+        model.add(sum(combo_flags_for_period) >= 1).only_enforce_if(period_power_combo)
+        model.add(sum(combo_flags_for_period) == 0).only_enforce_if(period_power_combo.Not())
+        power_combo_period_flags.append(period_power_combo)
+
     # Weighted objective:
     # 1) prioritise balanced off-court splits across halves,
-    # 2) use Mila+Katrina together as a secondary preference,
-    # 3) use Hannah+Sanavi together as a tertiary preference.
-    
+    # 2) prefer periods where either target pair is on together.
     primary_weight = 100
     secondary_weight = 5
-    tertiary_weight = 1
     model.maximize(
         primary_weight * (-sum(off_balance_penalties))
-        + secondary_weight * sum(mila_katrina_together_flags)
-        + tertiary_weight * sum(hannah_sanavi_together_flags)
+        + secondary_weight * sum(power_combo_period_flags)
     )
 
     # --- Solve ---
@@ -200,7 +216,7 @@ def main():
         for period_idx in range(periods_per_half):
             on_court = []
             off_court = []
-            for player_idx, player_name in enumerate(players):
+            for player_idx, player_name in enumerate(PLAYERS):
                 if solver.Value(is_on_court[(player_idx, period_idx)]) == 1:
                     on_court.append(player_name)
                 else:
@@ -210,7 +226,9 @@ def main():
             off_court.sort()
 
             first_table.add_row(
-                str(period_idx + 1), ", ".join(on_court), ", ".join(off_court)
+                str(period_idx + 1),
+                format_player_names(on_court),
+                format_player_names(off_court),
             )
 
         console.print("[bold cyan]── First Half ──[/bold cyan]")
@@ -226,7 +244,7 @@ def main():
         for period_idx in range(periods_per_half, num_periods):
             on_court = []
             off_court = []
-            for player_idx, player_name in enumerate(players):
+            for player_idx, player_name in enumerate(PLAYERS):
                 if solver.Value(is_on_court[(player_idx, period_idx)]) == 1:
                     on_court.append(player_name)
                 else:
@@ -236,11 +254,37 @@ def main():
             off_court.sort()
 
             second_table.add_row(
-                str(period_idx + 1), ", ".join(on_court), ", ".join(off_court)
+                str(period_idx + 1),
+                format_player_names(on_court),
+                format_player_names(off_court),
             )
 
         console.print("[bold cyan]── Second Half ──[/bold cyan]")
         console.print(second_table)
+        console.print()
+
+        summary_table = Table(show_header=True, header_style="bold cyan", border_style="blue")
+        summary_table.add_column("Player", style="bold white")
+        summary_table.add_column("On Count", style="green")
+        summary_table.add_column("Off Count", style="red")
+
+        for player_idx, player_name in enumerate(PLAYERS):
+            on_count = 0
+            off_count = 0
+            for period_idx in range(num_periods):
+                if solver.Value(is_on_court[(player_idx, period_idx)]) == 1:
+                    on_count += 1
+                else:
+                    off_count += 1
+
+            summary_table.add_row(
+                format_player_name(player_name),
+                str(on_count),
+                str(off_count),
+            )
+
+        console.print("[bold cyan]── Player Summary ──[/bold cyan]")
+        console.print(summary_table)
     else:
         print("No solution found.")
 
