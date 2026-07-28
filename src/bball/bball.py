@@ -1,4 +1,5 @@
 import argparse
+import random
 
 from ortools.sat.python import cp_model
 from rich.console import Console
@@ -16,7 +17,6 @@ POWER_COMBOS = [
     ["Indie", "Scarlett"]
 ]
 
-STARTING_LINEUP = ["Annabelle", "Bhakti", "Hannah", "Indie", "Sanavi"]
 MUST_BE_ON_IN_FINAL_PERIOD = ["Mila", "Katrina"]
 
 PERIODS_PER_HALF = 6
@@ -46,6 +46,12 @@ def parse_arguments() -> argparse.Namespace:
         default=[],
         help="Player name to exclude from this run; may be supplied multiple times.",
     )
+    parser.add_argument(
+        "--start",
+        action="append",
+        default=[],
+        help="Player name to include in the opening lineup; may be supplied multiple times.",
+    )
     return parser.parse_args()
 
 
@@ -61,6 +67,23 @@ def get_active_players(away_player_names: list[str]) -> list[str]:
 def build_active_player_indices(active_players: list[str]) -> dict[str, int]:
     """Map each active player's name to their index in the reduced roster."""
     return {player_name: index for index, player_name in enumerate(active_players)}
+
+
+def build_starting_lineup(active_players: list[str], requested_start_players: list[str], max_starters: int) -> list[str]:
+    """Build the opening-day starting lineup from requested starters and random fill-ins."""
+    active_player_set = set(active_players)
+    requested_starters = [
+        player_name
+        for player_name in dict.fromkeys(requested_start_players)
+        if player_name in active_player_set
+    ]
+
+    starters = requested_starters[:max_starters]
+    remaining_players = [player_name for player_name in active_players if player_name not in starters]
+    if len(starters) < max_starters:
+        random_fill = random.sample(remaining_players, k=min(max_starters - len(starters), len(remaining_players)))
+        starters.extend(random_fill)
+    return starters
 
 
 def filter_power_combos(active_players: list[str], power_combos: list[list[str]]) -> list[list[str]]:
@@ -182,19 +205,9 @@ def add_no_consecutive_off_constraints(model, is_on_court, num_players: int, num
             )
 
 
-def add_starting_lineup_constraints(model, is_on_court, players: list[str], starting_lineup: list[str], on_court_per_period: int):
-    """Force the opening-period lineup to match the desired starter preference as closely as possible."""
-    preferred_starting_players = [
-        player_name for player_name in starting_lineup if player_name in players
-    ][:on_court_per_period]
-
-    if len(preferred_starting_players) < on_court_per_period:
-        filler_players = [
-            player_name for player_name in players if player_name not in preferred_starting_players
-        ]
-        preferred_starting_players.extend(filler_players[: on_court_per_period - len(preferred_starting_players)])
-
-    preferred_starting_player_set = set(preferred_starting_players)
+def add_starting_lineup_constraints(model, is_on_court, players: list[str], starting_lineup: list[str]):
+    """Force the opening-period lineup to match the selected starting lineup."""
+    preferred_starting_player_set = set(starting_lineup)
     for player_idx, player_name in enumerate(players):
         model.add(is_on_court[(player_idx, 0)] == int(player_name in preferred_starting_player_set))
 
@@ -344,6 +357,7 @@ def main():
     active_player_indices = build_active_player_indices(active_players)
     active_power_combos = filter_power_combos(active_players, POWER_COMBOS)
     required_final_period_players = filter_required_final_period_players(active_players, MUST_BE_ON_IN_FINAL_PERIOD)
+    starting_lineup = build_starting_lineup(active_players, args.start, ON_COURT_PER_PERIOD)
 
     num_players = len(active_players)
    
@@ -355,7 +369,7 @@ def main():
     add_player_count_constraints(model, is_on_court, num_players, num_periods, ON_COURT_PER_PERIOD)
     off_balance_penalties = add_playtime_balance_constraints(model, is_on_court, num_players, num_periods, PERIODS_PER_HALF)
     add_no_consecutive_off_constraints(model, is_on_court, num_players, num_periods)
-    add_starting_lineup_constraints(model, is_on_court, active_players, STARTING_LINEUP, ON_COURT_PER_PERIOD)
+    add_starting_lineup_constraints(model, is_on_court, active_players, starting_lineup)
     add_final_period_constraints(model, is_on_court, active_player_indices, num_periods, required_final_period_players)
     add_transition_constraints(model, is_on_court, num_players, num_periods, PERIODS_PER_HALF)
     power_combo_period_flags = add_power_combo_objective(model, is_on_court, active_power_combos, active_player_indices, num_periods)
