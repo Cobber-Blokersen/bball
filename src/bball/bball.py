@@ -5,9 +5,21 @@ from ortools.sat.python import cp_model
 from rich.console import Console
 from rich.table import Table
 
+TEAM_ID = "1463e55b-341c-4d75-a8ae-a70fc3fb36cc"
 TEAM_NAME = "EDJBA Vikings U13 Girls 4 Winter 2026"
 PLAYERS = ["Indie", "Scarlett", "Mila", "Katrina",
            "Annabelle", "Hannah", "Sanavi", "Bhakti"]
+
+PLAY_TIME_HISTORY = {
+    "Indie":     [4, 12,   5, 4],
+    "Sanavi":    [4, None, 5, 4],
+    "Bhakti":    [4, None, 5, 4],
+    "Katrina":   [4, 12,   5, 4],
+    "Scarlett":  [5, 12,   4, 5],
+    "Mila":      [5, 12,   4, 5],
+    "Annabelle": [5, 12,   4, 5],
+    "Hannah":    [5, None, 4, 5],
+}
 
 # NOTE TO SELF: This seems to weight the top power combo most highly. Urpie thinks she might actually like that,
 # and would jiggle them weekly as she fancies.
@@ -19,7 +31,7 @@ POWER_COMBOS = [
 
 MUST_BE_ON_IN_FINAL_PERIOD = ["Mila", "Katrina"]
 
-PERIODS_PER_HALF = 6
+PERIODS_PER_HALF = [6, 6]
 ON_COURT_PER_PERIOD = 5
 MINUTES_PER_HALF = 20
 
@@ -37,6 +49,17 @@ player_console_colors = [
 player_index_by_name = {player_name: index for index, player_name in enumerate(PLAYERS)}
 
 
+def normalize_player_argument_values(argument_values: list[str]) -> list[str]:
+    """Expand comma-delimited argument values and trim optional surrounding whitespace."""
+    normalized_values = []
+    for raw_value in argument_values:
+        for candidate in raw_value.split(","):
+            player_name = candidate.strip()
+            if player_name:
+                normalized_values.append(player_name)
+    return normalized_values
+
+
 def parse_arguments() -> argparse.Namespace:
     """Parse command-line arguments for this solver run."""
     parser = argparse.ArgumentParser(description="Solve the basketball lineup optimization problem")
@@ -44,15 +67,18 @@ def parse_arguments() -> argparse.Namespace:
         "--away",
         action="append",
         default=[],
-        help="Player name to exclude from this run; may be supplied multiple times.",
+        help="Player name(s) to exclude from this run; comma-delimited values and repeated flags are supported.",
     )
     parser.add_argument(
         "--start",
         action="append",
         default=[],
-        help="Player name to include in the opening lineup; may be supplied multiple times.",
+        help="Player name(s) for the opening lineup; comma-delimited values and repeated flags are supported.",
     )
-    return parser.parse_args()
+    args = parser.parse_args()
+    args.away = normalize_player_argument_values(args.away)
+    args.start = normalize_player_argument_values(args.start)
+    return args
 
 
 def get_active_players(away_player_names: list[str]) -> list[str]:
@@ -117,6 +143,35 @@ def format_player_names(player_names: list[str]) -> str:
     return ", ".join(format_player_name(player_name) for player_name in sorted(player_names))
 
 
+def format_scoreboard_time(remaining_seconds: int) -> str:
+    """Format a countdown time like the scoreboard, e.g. 20:00:00 or 0:00:00."""
+    seconds = max(0, remaining_seconds)
+    minutes, seconds = divmod(seconds, 60)
+    hours, minutes = divmod(minutes, 60)
+    if hours:
+        return f"{hours}:{minutes:02d}:{seconds:02d}"
+    return f"{minutes}:{seconds:02d}"
+
+
+def build_period_start_times(periods_per_half: list[int], minutes_per_half: int) -> list[str]:
+    """Calculate scoreboard countdown values for each period in each half."""
+    first_half_period_seconds = minutes_per_half * 60 / periods_per_half[0]
+    second_half_period_seconds = minutes_per_half * 60 / periods_per_half[1]
+
+    period_start_times = []
+    remaining_seconds = minutes_per_half * 60
+    for _ in range(periods_per_half[0]):
+        period_start_times.append(format_scoreboard_time(int(remaining_seconds)))
+        remaining_seconds -= first_half_period_seconds
+
+    remaining_seconds = minutes_per_half * 60
+    for _ in range(periods_per_half[1]):
+        period_start_times.append(format_scoreboard_time(int(remaining_seconds)))
+        remaining_seconds -= second_half_period_seconds
+
+    return period_start_times
+
+
 def build_model(num_players: int, num_periods: int):
     """Create the CP-SAT model and the boolean variables for each player-period pair."""
     model = cp_model.CpModel()
@@ -138,8 +193,8 @@ def add_player_count_constraints(model, is_on_court, num_players: int, num_perio
         )
 
 
-def add_playtime_balance_constraints(model, is_on_court, num_players: int, num_periods: int, periods_per_half: int):
-    """Balance total playing time across the roster and across the two halves."""
+def add_playtime_balance_constraints(model, is_on_court, num_players: int, num_periods: int, periods_per_half: list[int]):
+    """Balance total playing time across the roster and across the two (possibly uneven) halves."""
     total_periods_played = []
     for player_idx in range(num_players):
         total_periods_for_player = model.new_int_var(0, num_periods, f"total_p{player_idx}")
@@ -164,29 +219,33 @@ def add_playtime_balance_constraints(model, is_on_court, num_players: int, num_p
                 model.add(playing_time_difference <= 1)
                 model.add(playing_time_difference >= -1)
 
+    first_half_periods = periods_per_half[0]
+    second_half_periods = periods_per_half[1]
+    second_half_start = first_half_periods
+
     off_balance_penalties = []
     for player_idx in range(num_players):
-        first_half_on = model.new_int_var(0, periods_per_half, f"first_half_on_p{player_idx}")
-        second_half_on = model.new_int_var(0, periods_per_half, f"second_half_on_p{player_idx}")
+        first_half_on = model.new_int_var(0, first_half_periods, f"first_half_on_p{player_idx}")
+        second_half_on = model.new_int_var(0, second_half_periods, f"second_half_on_p{player_idx}")
         model.add(
             first_half_on
-            == sum(is_on_court[(player_idx, period_idx)] for period_idx in range(periods_per_half))
+            == sum(is_on_court[(player_idx, period_idx)] for period_idx in range(first_half_periods))
         )
         model.add(
             second_half_on
             == sum(
                 is_on_court[(player_idx, period_idx)]
-                for period_idx in range(periods_per_half, num_periods)
+                for period_idx in range(second_half_start, num_periods)
             )
         )
 
         half_split_diff = model.new_int_var(
-            -periods_per_half, periods_per_half, f"half_split_diff_p{player_idx}"
+            -num_periods, num_periods, f"half_split_diff_p{player_idx}"
         )
         model.add(half_split_diff == first_half_on - second_half_on)
 
         half_split_abs_diff = model.new_int_var(
-            0, periods_per_half, f"half_split_abs_diff_p{player_idx}"
+            0, num_periods, f"half_split_abs_diff_p{player_idx}"
         )
         model.add_abs_equality(half_split_abs_diff, half_split_diff)
         off_balance_penalties.append(half_split_abs_diff)
@@ -222,9 +281,9 @@ def add_final_period_constraints(model, is_on_court, player_indices: dict[str, i
     model.add(sum(required_player_vars) >= 1)
 
 
-def add_transition_constraints(model, is_on_court, num_players: int, num_periods: int, periods_per_half: int):
+def add_transition_constraints(model, is_on_court, num_players: int, num_periods: int, periods_per_half: list[int]):
     """Link the start of the second half and the end of the game to the opening-period state."""
-    second_half_start = periods_per_half
+    second_half_start = periods_per_half[0]
     for player_idx in range(num_players):
         model.add_bool_or(
             [is_on_court[(player_idx, 0)], is_on_court[(player_idx, second_half_start)]]
@@ -279,10 +338,17 @@ def solve_model(model, time_limit: float = 60.0):
     return solver, status
 
 
-def build_period_rows(solver, is_on_court, players: list[str], num_periods: int, periods_per_half: int, start_period: int):
-    """Build the display rows for one half of the schedule."""
+def build_period_rows(
+    solver,
+    is_on_court,
+    players: list[str],
+    periods_in_section: int,
+    start_period: int,
+    period_start_times: list[str],
+):
+    """Build the display rows for a contiguous section of the schedule."""
     rows = []
-    for period_idx in range(start_period, start_period + periods_per_half):
+    for period_idx in range(start_period, start_period + periods_in_section):
         on_court = []
         off_court = []
         for player_idx, player_name in enumerate(players):
@@ -293,24 +359,41 @@ def build_period_rows(solver, is_on_court, players: list[str], num_periods: int,
 
         on_court.sort()
         off_court.sort()
-        rows.append((str(period_idx + 1), format_player_names(on_court), format_player_names(off_court)))
+        rows.append(
+            (
+                str(period_idx + 1),
+                period_start_times[period_idx],
+                format_player_names(on_court),
+                format_player_names(off_court),
+            )
+        )
     return rows
 
 
-def render_solution(solver, status, is_on_court, players: list[str], periods_per_half: int, num_periods: int):
+def render_solution(solver, status, is_on_court, players: list[str], periods_per_half: list[int], num_periods: int):
     """Render the solved schedule and summary tables to the console."""
     console = Console(force_terminal=True, color_system="truecolor")
     if status == cp_model.OPTIMAL or status == cp_model.FEASIBLE:
+        period_start_times = build_period_start_times(periods_per_half, MINUTES_PER_HALF)
+
         console.print(f"[bold green]Status:[/bold green] {solver.StatusName(status)}")
         console.print()
 
         first_table = Table(show_header=True, header_style="bold cyan", border_style="blue")
         first_table.add_column("Period", style="dim", width=6)
+        first_table.add_column("Time", style="magenta", width=10)
         first_table.add_column("On Court", style="green")
         first_table.add_column("Off Court", style="red")
 
-        for period, on_court, off_court in build_period_rows(solver, is_on_court, players, num_periods, periods_per_half, 0):
-            first_table.add_row(period, on_court, off_court)
+        for period, time, on_court, off_court in build_period_rows(
+            solver,
+            is_on_court,
+            players,
+            periods_per_half[0],
+            0,
+            period_start_times,
+        ):
+            first_table.add_row(period, time, on_court, off_court)
 
         console.print("[bold cyan]── First Half ──[/bold cyan]")
         console.print(first_table)
@@ -318,11 +401,20 @@ def render_solution(solver, status, is_on_court, players: list[str], periods_per
 
         second_table = Table(show_header=True, header_style="bold cyan", border_style="blue")
         second_table.add_column("Period", style="dim", width=6)
+        second_table.add_column("Time", style="magenta", width=10)
         second_table.add_column("On Court", style="green")
         second_table.add_column("Off Court", style="red")
 
-        for period, on_court, off_court in build_period_rows(solver, is_on_court, players, num_periods, periods_per_half, periods_per_half):
-            second_table.add_row(period, on_court, off_court)
+        second_half_start = periods_per_half[0]
+        for period, time, on_court, off_court in build_period_rows(
+            solver,
+            is_on_court,
+            players,
+            periods_per_half[1],
+            second_half_start,
+            period_start_times,
+        ):
+            second_table.add_row(period, time, on_court, off_court)
 
         console.print("[bold cyan]── Second Half ──[/bold cyan]")
         console.print(second_table)
@@ -359,11 +451,12 @@ def main():
     required_final_period_players = filter_required_final_period_players(active_players, MUST_BE_ON_IN_FINAL_PERIOD)
     starting_lineup = build_starting_lineup(active_players, args.start, ON_COURT_PER_PERIOD)
 
+    if len(PERIODS_PER_HALF) != 2:
+        raise ValueError("PERIODS_PER_HALF must contain exactly two entries, e.g. [6, 6] or [6, 5].")
+
     num_players = len(active_players)
-   
-    num_halves = 2
-    num_periods = PERIODS_PER_HALF * num_halves
-    
+    num_periods = sum(PERIODS_PER_HALF)
+
 
     model, is_on_court = build_model(num_players, num_periods)
     add_player_count_constraints(model, is_on_court, num_players, num_periods, ON_COURT_PER_PERIOD)
