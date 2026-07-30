@@ -3,7 +3,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
-from bball.models import Game, LineupSpin, LineupConfig, Player, Team
+from bball.models import Game, LineupConfig, LineupSpin, Player, Team
 from bball.repositories import (
     InMemoryGameRepository,
     InMemoryPlayerRepository,

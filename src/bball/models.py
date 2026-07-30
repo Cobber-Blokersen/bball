@@ -3,7 +3,6 @@ from __future__ import annotations
 import uuid
 from dataclasses import dataclass, field
 
-
 DEFAULT_POWER_COMBOS = [
     ["Mila", "Katrina"],
     ["Hannah", "Sanavi"],
@@ -17,7 +16,7 @@ DEFAULT_MINUTES_PER_HALF = 20
 
 @dataclass(slots=True)
 class LineupConfig:
-    team: "Team"
+    team: Team
     power_combos: list[list[str]] = field(default_factory=lambda: [list(combo) for combo in DEFAULT_POWER_COMBOS])
     required_final_period_players: list[str] = field(
         default_factory=lambda: list(DEFAULT_REQUIRED_FINAL_PERIOD_PLAYERS)
