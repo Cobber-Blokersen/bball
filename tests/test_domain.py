@@ -3,12 +3,13 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
-from bball.models import Game, LineupSpin, Player, Team
+from bball.models import Game, LineupSpin, LineupConfig, Player, Team
 from bball.repositories import (
     InMemoryGameRepository,
     InMemoryPlayerRepository,
     InMemoryTeamRepository,
 )
+from bball.solver import build_default_team
 
 
 def test_player_and_team_modeling() -> None:
@@ -29,6 +30,22 @@ def test_game_tracks_lineup_spins_and_selection() -> None:
 
     assert game.selected_lineup_id == "spin-1"
     assert game.get_selected_spin() == spin
+
+
+def test_lineup_config_lives_with_domain_models() -> None:
+    team = Team(id="t-1", name="Vikings", players=[Player(id="p-1", name="Indie")])
+    config = LineupConfig(team=team, periods_per_half=[4, 4])
+
+    assert config.team is team
+    assert config.periods_per_half == [4, 4]
+
+
+def test_default_team_contains_lineup_config() -> None:
+    team = build_default_team()
+
+    assert team.lineup_config is not None
+    assert team.lineup_config.power_combos == [["Mila", "Katrina"], ["Hannah", "Sanavi"], ["Indie", "Scarlett"]]
+    assert team.lineup_config.required_final_period_players == ["Mila", "Katrina"]
 
 
 def test_in_memory_repositories_can_back_the_domain() -> None:

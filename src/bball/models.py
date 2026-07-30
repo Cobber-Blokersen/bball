@@ -4,6 +4,29 @@ import uuid
 from dataclasses import dataclass, field
 
 
+DEFAULT_POWER_COMBOS = [
+    ["Mila", "Katrina"],
+    ["Hannah", "Sanavi"],
+    ["Indie", "Scarlett"],
+]
+DEFAULT_REQUIRED_FINAL_PERIOD_PLAYERS = ["Mila", "Katrina"]
+DEFAULT_PERIODS_PER_HALF = [6, 6]
+DEFAULT_ON_COURT_PER_PERIOD = 5
+DEFAULT_MINUTES_PER_HALF = 20
+
+
+@dataclass(slots=True)
+class LineupConfig:
+    team: "Team"
+    power_combos: list[list[str]] = field(default_factory=lambda: [list(combo) for combo in DEFAULT_POWER_COMBOS])
+    required_final_period_players: list[str] = field(
+        default_factory=lambda: list(DEFAULT_REQUIRED_FINAL_PERIOD_PLAYERS)
+    )
+    periods_per_half: list[int] = field(default_factory=lambda: list(DEFAULT_PERIODS_PER_HALF))
+    on_court_per_period: int = DEFAULT_ON_COURT_PER_PERIOD
+    minutes_per_half: int = DEFAULT_MINUTES_PER_HALF
+
+
 @dataclass(slots=True)
 class Player:
     id: str = field(default_factory=lambda: str(uuid.uuid4()))
@@ -15,6 +38,11 @@ class Team:
     id: str = field(default_factory=lambda: str(uuid.uuid4()))
     name: str = ""
     players: list[Player] = field(default_factory=list)
+    lineup_config: LineupConfig | None = None
+
+    def __post_init__(self) -> None:
+        if self.lineup_config is None:
+            self.lineup_config = LineupConfig(team=self)
 
     def add_player(self, player: Player) -> None:
         self.players.append(player)

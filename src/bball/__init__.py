@@ -1,4 +1,4 @@
-from .models import Game, LineupSpin, Player, Team
+from .models import Game, LineupConfig, LineupSpin, Player, Team
 from .repositories import (
     GameRepository,
     InMemoryGameRepository,
@@ -11,6 +11,7 @@ from .repositories import (
 __all__ = [
     "Game",
     "GameRepository",
+    "LineupConfig",
     "InMemoryGameRepository",
     "InMemoryPlayerRepository",
     "InMemoryTeamRepository",

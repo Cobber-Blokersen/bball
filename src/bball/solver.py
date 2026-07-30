@@ -3,7 +3,6 @@ from __future__ import annotations
 import argparse
 import random
 import uuid
-from dataclasses import dataclass, field
 from typing import Any
 
 from ortools.sat.python.cp_model import FEASIBLE, OPTIMAL, CpModel, CpSolver
@@ -11,7 +10,7 @@ from ortools.sat.python.cp_model_helper import CpSolverStatus
 from rich.console import Console
 from rich.table import Table
 
-from .models import Game, LineupSpin, Player, Team
+from .models import Game, LineupConfig, LineupSpin, Player, Team
 from .repositories import GameRepository
 
 PLAYER_CONSOLE_COLORS = [
@@ -24,16 +23,6 @@ PLAYER_CONSOLE_COLORS = [
     "bright_magenta",
     "orange1",
 ]
-
-
-@dataclass(slots=True)
-class LineupConfig:
-    team: Team
-    power_combos: list[list[str]] = field(default_factory=list)
-    required_final_period_players: list[str] = field(default_factory=list)
-    periods_per_half: list[int] = field(default_factory=lambda: [6, 6])
-    on_court_per_period: int = 5
-    minutes_per_half: int = 20
 
 
 def build_default_team() -> Team:
@@ -508,7 +497,7 @@ def solve_team_lineup(  # noqa: PLR0917
     requested_start_players = requested_start_players or []
 
     if config is None:
-        config = LineupConfig(team=team)
+        config = team.lineup_config or LineupConfig(team=team)
 
     active_players = get_active_players(team, away_player_names)
     active_player_indices = build_active_player_indices(active_players)
