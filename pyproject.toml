@@ -19,3 +19,24 @@ dev = [
 
 [tool.uv]
 required-version = ">0.9"
+
+[tool.ruff]
+line-length = 120
+
+[tool.ruff.lint]
+select = [
+  "E", "W", "F", "B", "C4", "UP", "N", "ANN", "S", "I", "RET", "SIM", "PL",
+]
+ignore = [
+  "ANN401",
+  "PLR0913",
+  "PLR2004",
+  "S101",
+]
+
+[tool.ruff.format]
+quote-style = "double"
+indent-style = "space"
+
+[tool.pytest.ini_options]
+addopts = "-v -v -v -x --capture=tee-sys"
