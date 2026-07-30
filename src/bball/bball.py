@@ -37,7 +37,7 @@ ON_COURT_PER_PERIOD = 5
 MINUTES_PER_HALF = 20
 
 
-def main():
+def main() -> None:
     """Run the full optimization workflow for the selected roster and constraints."""
     args = parse_arguments()
     team = build_default_team()

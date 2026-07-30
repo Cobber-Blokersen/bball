@@ -11,7 +11,7 @@ from bball.repositories import (
 )
 
 
-def test_player_and_team_modeling():
+def test_player_and_team_modeling() -> None:
     player = Player(id="p-1", name="Indie")
     team = Team(id="t-1", name="Vikings", players=[player])
 
@@ -19,7 +19,7 @@ def test_player_and_team_modeling():
     assert team.get_player_names() == ["Indie"]
 
 
-def test_game_tracks_lineup_spins_and_selection():
+def test_game_tracks_lineup_spins_and_selection() -> None:
     team = Team(id="t-1", name="Vikings")
     game = Game(id="g-1", team_id=team.id, date="2026-01-10")
     spin = LineupSpin(id="spin-1", players=[Player(id="p-1", name="Indie")])
@@ -31,14 +31,10 @@ def test_game_tracks_lineup_spins_and_selection():
     assert game.get_selected_spin() == spin
 
 
-def test_in_memory_repositories_can_back_the_domain():
+def test_in_memory_repositories_can_back_the_domain() -> None:
     player_repo = InMemoryPlayerRepository([Player(id="p-1", name="Indie")])
-    team_repo = InMemoryTeamRepository(
-        [Team(id="t-1", name="Vikings", players=[player_repo.get("p-1")])]
-    )
-    game_repo = InMemoryGameRepository(
-        [Game(id="g-1", team_id="t-1", date="2026-01-10")]
-    )
+    team_repo = InMemoryTeamRepository([Team(id="t-1", name="Vikings", players=[player_repo.get("p-1")])])
+    game_repo = InMemoryGameRepository([Game(id="g-1", team_id="t-1", date="2026-01-10")])
 
     assert player_repo.get("p-1").name == "Indie"
     assert team_repo.get("t-1").name == "Vikings"
