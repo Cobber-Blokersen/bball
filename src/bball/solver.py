@@ -3,6 +3,7 @@ from __future__ import annotations
 import argparse
 import random
 import uuid
+from datetime import datetime
 from typing import Any
 
 from ortools.sat.python.cp_model import FEASIBLE, OPTIMAL, CpModel, CpSolver
@@ -396,7 +397,7 @@ def build_period_rows(  # noqa: PLR0917
     return rows
 
 
-def render_solution(  # noqa: PLR0917
+def build_solution_display_data(  # noqa: PLR0917
     solver: CpSolver,
     status: CpSolverStatus,
     is_on_court: dict[tuple[int, int], Any],
@@ -404,14 +405,70 @@ def render_solution(  # noqa: PLR0917
     periods_per_half: list[int],
     num_periods: int,
     minutes_per_half: int,
-) -> None:
-    """Render the solved schedule and summary tables to the console."""
-    console = Console(force_terminal=True, color_system="truecolor")
+) -> dict[str, Any]:
+    """Build the display rows used to render a solved schedule and summary tables."""
     player_index_by_name = build_player_index_by_name(players)
-    if status in (OPTIMAL, FEASIBLE):
-        period_start_times = build_period_start_times(periods_per_half, minutes_per_half)
+    if status not in (OPTIMAL, FEASIBLE):
+        return {"status": solver.StatusName(status), "first_half_rows": [], "second_half_rows": [], "summary_rows": []}
 
-        console.print(f"[bold green]Status:[/bold green] {solver.StatusName(status)}")
+    period_start_times = build_period_start_times(periods_per_half, minutes_per_half)
+    first_half_rows = [
+        row
+        for row in build_period_rows(
+            solver,
+            is_on_court,
+            players,
+            periods_per_half[0],
+            0,
+            period_start_times,
+            player_index_by_name,
+        )
+    ]
+
+    second_half_rows = []
+    second_half_start = periods_per_half[0]
+    second_half_rows.extend(
+        build_period_rows(
+            solver,
+            is_on_court,
+            players,
+            periods_per_half[1],
+            second_half_start,
+            period_start_times,
+            player_index_by_name,
+        )
+    )
+
+    summary_rows = []
+    for player_idx, player_name in enumerate(players):
+        on_count = 0
+        off_count = 0
+        for period_idx in range(num_periods):
+            if solver.Value(is_on_court[(player_idx, period_idx)]) == 1:
+                on_count += 1
+            else:
+                off_count += 1
+
+        summary_rows.append((format_player_name(player_name, player_index_by_name), str(on_count), str(off_count)))
+
+    return {
+        "status": solver.StatusName(status),
+        "first_half_rows": first_half_rows,
+        "second_half_rows": second_half_rows,
+        "summary_rows": summary_rows,
+    }
+
+
+def render_solution_display_data(display_data: dict[str, Any], config_snapshot: dict[str, Any] | None = None) -> None:
+    """Render the solved schedule and summary tables to the console from precomputed display data."""
+    console = Console(force_terminal=True, color_system="truecolor")
+    status = display_data.get("status", "UNKNOWN")
+    first_half_rows = display_data.get("first_half_rows", [])
+    second_half_rows = display_data.get("second_half_rows", [])
+    summary_rows = display_data.get("summary_rows", [])
+
+    if status in ("OPTIMAL", "FEASIBLE"):
+        console.print(f"[bold green]Status:[/bold green] {status}")
         console.print()
 
         first_table = Table(show_header=True, header_style="bold cyan", border_style="blue")
@@ -420,15 +477,7 @@ def render_solution(  # noqa: PLR0917
         first_table.add_column("On Court", style="green")
         first_table.add_column("Off Court", style="red")
 
-        for period, time, on_court, off_court in build_period_rows(
-            solver,
-            is_on_court,
-            players,
-            periods_per_half[0],
-            0,
-            period_start_times,
-            player_index_by_name,
-        ):
+        for period, time, on_court, off_court in first_half_rows:
             first_table.add_row(period, time, on_court, off_court)
 
         console.print("[bold cyan]── First Half ──[/bold cyan]")
@@ -441,16 +490,7 @@ def render_solution(  # noqa: PLR0917
         second_table.add_column("On Court", style="green")
         second_table.add_column("Off Court", style="red")
 
-        second_half_start = periods_per_half[0]
-        for period, time, on_court, off_court in build_period_rows(
-            solver,
-            is_on_court,
-            players,
-            periods_per_half[1],
-            second_half_start,
-            period_start_times,
-            player_index_by_name,
-        ):
+        for period, time, on_court, off_court in second_half_rows:
             second_table.add_row(period, time, on_court, off_court)
 
         console.print("[bold cyan]── Second Half ──[/bold cyan]")
@@ -462,25 +502,48 @@ def render_solution(  # noqa: PLR0917
         summary_table.add_column("On Count", style="green")
         summary_table.add_column("Off Count", style="red")
 
-        for player_idx, player_name in enumerate(players):
-            on_count = 0
-            off_count = 0
-            for period_idx in range(num_periods):
-                if solver.Value(is_on_court[(player_idx, period_idx)]) == 1:
-                    on_count += 1
-                else:
-                    off_count += 1
-
-            summary_table.add_row(
-                format_player_name(player_name, player_index_by_name),
-                str(on_count),
-                str(off_count),
-            )
+        for player, on_count, off_count in summary_rows:
+            summary_table.add_row(player, on_count, off_count)
 
         console.print("[bold cyan]── Player Summary ──[/bold cyan]")
         console.print(summary_table)
+
+        if config_snapshot:
+            console.print()
+            console.print("[bold]Lineup config snapshot[/bold]")
+            power_combos = config_snapshot.get("power_combos", [])
+            if power_combos:
+                console.print("[bold]Power combos[/bold]")
+                for combo in power_combos:
+                    console.print(f"- {' / '.join(combo)}")
+            required_players = config_snapshot.get("required_final_period_players", [])
+            if required_players:
+                console.print(f"[bold]Must be on at the end[/bold]: {', '.join(required_players)}")
     else:
         print("No solution found.")
+
+
+def render_solution(  # noqa: PLR0917
+    solver: CpSolver,
+    status: CpSolverStatus,
+    is_on_court: dict[tuple[int, int], Any],
+    players: list[str],
+    periods_per_half: list[int],
+    num_periods: int,
+    minutes_per_half: int,
+    config_snapshot: dict[str, Any] | None = None,
+) -> None:
+    """Render the solved schedule and summary tables to the console."""
+    display_data = build_solution_display_data(
+        solver,
+        status,
+        is_on_court,
+        players,
+        periods_per_half,
+        num_periods,
+        minutes_per_half,
+    )
+    render_solution_display_data(display_data, config_snapshot=config_snapshot)
 
 
 def solve_team_lineup(  # noqa: PLR0917
@@ -542,19 +605,78 @@ def solve_team_lineup(  # noqa: PLR0917
         ]
         opening_lineup.sort()
 
-        spin = LineupSpin(
-            id=str(uuid.uuid4()),
-            players=[Player(name=player_name) for player_name in opening_lineup],
-        )
-        game = Game(
-            id=str(uuid.uuid4()),
-            team_id=team.id,
-            date=game_date or "",
-            lineup_spins=[spin],
-            selected_lineup_id=spin.id,
-        )
-        if game_repo is not None:
+        if game_repo is not None and game_date:
+            game = game_repo.get_by_team_and_date(team.id, game_date)
+            if game is None:
+                game = Game(
+                    id=str(uuid.uuid4()),
+                    team_id=team.id,
+                    date=game_date,
+                    lineup_spins=[],
+                    selected_lineup_id=None,
+                )
+            spin_number = game.get_next_spin_number()
+            display_data = build_solution_display_data(
+                solver,
+                status,
+                is_on_court,
+                active_players,
+                config.periods_per_half,
+                num_periods,
+                config.minutes_per_half,
+            )
+            spin = LineupSpin(
+                id=str(uuid.uuid4()),
+                number=spin_number,
+                players=[Player(name=player_name) for player_name in opening_lineup],
+                created_at=datetime.utcnow().isoformat(),
+                display_data=display_data,
+                config_snapshot={
+                    "power_combos": active_power_combos,
+                    "required_final_period_players": required_final_period_players,
+                    "periods_per_half": list(config.periods_per_half),
+                    "on_court_per_period": config.on_court_per_period,
+                    "minutes_per_half": config.minutes_per_half,
+                },
+                away_players=list(away_player_names),
+            )
+            game.add_spin(spin)
+            game.selected_lineup_id = spin.id
             game_repo.save(game)
+        else:
+            display_data = build_solution_display_data(
+                solver,
+                status,
+                is_on_court,
+                active_players,
+                config.periods_per_half,
+                num_periods,
+                config.minutes_per_half,
+            )
+            spin = LineupSpin(
+                id=str(uuid.uuid4()),
+                number=1,
+                players=[Player(name=player_name) for player_name in opening_lineup],
+                created_at=datetime.utcnow().isoformat(),
+                display_data=display_data,
+                config_snapshot={
+                    "power_combos": active_power_combos,
+                    "required_final_period_players": required_final_period_players,
+                    "periods_per_half": list(config.periods_per_half),
+                    "on_court_per_period": config.on_court_per_period,
+                    "minutes_per_half": config.minutes_per_half,
+                },
+                away_players=list(away_player_names),
+            )
+            game = Game(
+                id=str(uuid.uuid4()),
+                team_id=team.id,
+                date=game_date or "",
+                lineup_spins=[spin],
+                selected_lineup_id=spin.id,
+            )
+            if game_repo is not None:
+                game_repo.save(game)
 
         if render_output:
             render_solution(
@@ -565,6 +687,13 @@ def solve_team_lineup(  # noqa: PLR0917
                 config.periods_per_half,
                 num_periods,
                 config.minutes_per_half,
+                config_snapshot={
+                    "power_combos": active_power_combos,
+                    "required_final_period_players": required_final_period_players,
+                    "periods_per_half": list(config.periods_per_half),
+                    "on_court_per_period": config.on_court_per_period,
+                    "minutes_per_half": config.minutes_per_half,
+                },
             )
         return game
 

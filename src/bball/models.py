@@ -59,8 +59,12 @@ class Team:
 @dataclass(slots=True)
 class LineupSpin:
     id: str = field(default_factory=lambda: str(uuid.uuid4()))
+    number: int = 1
     players: list[Player] = field(default_factory=list)
     created_at: str | None = None
+    display_data: dict[str, list[list[str]] | str] | None = None
+    config_snapshot: dict[str, Any] | None = None
+    away_players: list[str] = field(default_factory=list)
 
 
 @dataclass(slots=True)
@@ -74,6 +78,10 @@ class Game:
     def add_spin(self, spin: LineupSpin) -> None:
         self.lineup_spins.append(spin)
 
+    def renumber_spins(self) -> None:
+        for index, spin in enumerate(self.lineup_spins, start=1):
+            spin.number = index
+
     def select_spin(self, spin_id: str) -> None:
         if not any(spin.id == spin_id for spin in self.lineup_spins):
             raise KeyError(f"Unknown lineup spin: {spin_id}")
@@ -84,3 +92,12 @@ class Game:
             if spin.id == self.selected_lineup_id:
                 return spin
         return None
+
+    def get_next_spin_number(self) -> int:
+        if not self.lineup_spins:
+            return 1
+
+        existing_numbers = sorted({spin.number for spin in self.lineup_spins if spin.number is not None})
+        if 1 not in existing_numbers:
+            return 1
+        return max(existing_numbers) + 1
