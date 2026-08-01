@@ -49,3 +49,6 @@ htmlcov/
 # Testing
 .pytest_cache/
 .nox/
+
+# Team data
+data/

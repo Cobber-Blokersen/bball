@@ -1,0 +1,76 @@
+from __future__ import annotations
+
+from .models import Game, Player, Team
+from .repositories import GameRepository, PlayerRepository, TeamRepository
+
+
+class InMemoryPlayerRepository(PlayerRepository):
+    def __init__(self, players: list[Player] | None = None) -> None:
+        self._players = {player.id: player for player in (players or [])}
+
+    def get(self, player_id: str) -> Player | None:
+        return self._players.get(player_id)
+
+    def list(self) -> list[Player]:
+        return list(self._players.values())
+
+    def save(self, player: Player) -> None:
+        self._players[player.id] = player
+
+    def initialize(self) -> None:
+        return None
+
+    def reset(self) -> None:
+        self._players.clear()
+
+    def db_exists(self) -> bool:
+        return True
+
+
+class InMemoryTeamRepository(TeamRepository):
+    def __init__(self, teams: list[Team] | None = None) -> None:
+        self._teams = {team.id: team for team in (teams or [])}
+
+    def get(self, team_id: str) -> Team | None:
+        return self._teams.get(team_id)
+
+    def list(self) -> list[Team]:
+        return list(self._teams.values())
+
+    def save(self, team: Team) -> None:
+        self._teams[team.id] = team
+
+    def initialize(self) -> None:
+        return None
+
+    def reset(self) -> None:
+        self._teams.clear()
+
+    def db_exists(self) -> bool:
+        return True
+
+
+class InMemoryGameRepository(GameRepository):
+    def __init__(self, games: list[Game] | None = None) -> None:
+        self._games = {game.id: game for game in (games or [])}
+
+    def get(self, game_id: str) -> Game | None:
+        return self._games.get(game_id)
+
+    def get_by_team_and_date(self, team_id: str, date: str) -> Game | None:
+        return next((game for game in self._games.values() if game.team_id == team_id and game.date == date), None)
+
+    def list(self) -> list[Game]:
+        return list(self._games.values())
+
+    def save(self, game: Game) -> None:
+        self._games[game.id] = game
+
+    def initialize(self) -> None:
+        return None
+
+    def reset(self) -> None:
+        self._games.clear()
+
+    def db_exists(self) -> bool:
+        return True

@@ -1,0 +1,312 @@
+from __future__ import annotations
+
+import json
+import sqlite3
+import time
+from datetime import UTC, datetime
+from pathlib import Path
+
+from . import settings
+from .models import Game, LineupConfig, LineupSpin, Player, Team
+from .repositories import GameRepository, PlayerRepository, TeamRepository
+
+
+class SQLitePlayerRepository(PlayerRepository):
+    def __init__(self, db_path: str | None = None) -> None:
+        self.db_path = str(db_path or settings.DB_PATH)
+        self.initialize()
+
+    def _connect(self) -> sqlite3.Connection:
+        for _ in range(20):
+            try:
+                conn = sqlite3.connect(self.db_path, timeout=30.0)
+                conn.execute("PRAGMA busy_timeout = 30000")
+                conn.execute("PRAGMA journal_mode = WAL")
+                return conn
+            except sqlite3.OperationalError:
+                time.sleep(0.25)
+        return sqlite3.connect(self.db_path, timeout=30.0)
+
+    def initialize(self) -> None:
+        settings.ensure_db_dir()
+        with self._connect() as conn:
+            conn.execute("CREATE TABLE IF NOT EXISTS players (id TEXT PRIMARY KEY, name TEXT NOT NULL)")
+            conn.commit()
+
+    def _init_db(self) -> None:
+        self.initialize()
+
+    def get(self, player_id: str) -> Player | None:
+        with self._connect() as conn:
+            row = conn.execute("SELECT id, name FROM players WHERE id = ?", (player_id,)).fetchone()
+        if row:
+            return Player(id=row[0], name=row[1])
+        return None
+
+    def list(self) -> list[Player]:
+        with self._connect() as conn:
+            rows = conn.execute("SELECT id, name FROM players ORDER BY name").fetchall()
+        return [Player(id=row[0], name=row[1]) for row in rows]
+
+    def save(self, player: Player) -> None:
+        with self._connect() as conn:
+            conn.execute("INSERT OR REPLACE INTO players (id, name) VALUES (?, ?)", (player.id, player.name))
+            conn.commit()
+
+    def reset(self) -> None:
+        with self._connect() as conn:
+            conn.execute("DELETE FROM players")
+            conn.commit()
+
+    def db_exists(self) -> bool:
+        return Path(self.db_path).exists()
+
+
+class SQLiteTeamRepository(TeamRepository):
+    def __init__(self, db_path: str | None = None) -> None:
+        self.db_path = str(db_path or settings.DB_PATH)
+        self.initialize()
+
+    def _connect(self) -> sqlite3.Connection:
+        for _ in range(20):
+            try:
+                conn = sqlite3.connect(self.db_path, timeout=30.0)
+                conn.execute("PRAGMA busy_timeout = 30000")
+                conn.execute("PRAGMA journal_mode = WAL")
+                return conn
+            except sqlite3.OperationalError:
+                time.sleep(0.25)
+        return sqlite3.connect(self.db_path, timeout=30.0)
+
+    def initialize(self) -> None:
+        settings.ensure_db_dir()
+        with self._connect() as conn:
+            conn.execute(
+                "CREATE TABLE IF NOT EXISTS teams (id TEXT PRIMARY KEY, name TEXT NOT NULL, "
+                "players_json TEXT NOT NULL, config_json TEXT)"
+            )
+            conn.commit()
+
+    def _init_db(self) -> None:
+        self.initialize()
+
+    def get(self, team_id: str) -> Team | None:
+        with self._connect() as conn:
+            row = conn.execute(
+                "SELECT id, name, players_json, config_json FROM teams WHERE id = ?",
+                (team_id,),
+            ).fetchone()
+        if not row:
+            return None
+        _, name, players_json, config_json = row
+        players_data = json.loads(players_json)
+        players = [Player(id=item["id"], name=item["name"]) for item in players_data]
+        team = Team(id=team_id, name=name, players=players)
+        if config_json:
+            config_data = json.loads(config_json)
+            team.lineup_config = LineupConfig(
+                team=team,
+                power_combos=[list(combo) for combo in config_data.get("power_combos", [])],
+                required_final_period_players=list(config_data.get("required_final_period_players", [])),
+                periods_per_half=list(config_data.get("periods_per_half", [6, 6])),
+                on_court_per_period=config_data.get("on_court_per_period", 5),
+                minutes_per_half=config_data.get("minutes_per_half", 20),
+            )
+        else:
+            team.lineup_config = None
+        return team
+
+    def list(self) -> list[Team]:
+        with self._connect() as conn:
+            rows = conn.execute("SELECT id, name, players_json, config_json FROM teams ORDER BY name").fetchall()
+        teams: list[Team] = []
+        for team_id, name, players_json, config_json in rows:
+            players_data = json.loads(players_json)
+            players = [Player(id=item["id"], name=item["name"]) for item in players_data]
+            team = Team(id=team_id, name=name, players=players)
+            if config_json:
+                config_data = json.loads(config_json)
+                team.lineup_config = LineupConfig(
+                    team=team,
+                    power_combos=[list(combo) for combo in config_data.get("power_combos", [])],
+                    required_final_period_players=list(config_data.get("required_final_period_players", [])),
+                    periods_per_half=list(config_data.get("periods_per_half", [6, 6])),
+                    on_court_per_period=config_data.get("on_court_per_period", 5),
+                    minutes_per_half=config_data.get("minutes_per_half", 20),
+                )
+            else:
+                team.lineup_config = None
+            teams.append(team)
+        return teams
+
+    def save(self, team: Team) -> None:
+        with self._connect() as conn:
+            config = team.lineup_config
+            config_payload = None
+            if config is not None:
+                config_payload = json.dumps(
+                    {
+                        "power_combos": config.power_combos,
+                        "required_final_period_players": config.required_final_period_players,
+                        "periods_per_half": config.periods_per_half,
+                        "on_court_per_period": config.on_court_per_period,
+                        "minutes_per_half": config.minutes_per_half,
+                    }
+                )
+            conn.execute(
+                "INSERT OR REPLACE INTO teams (id, name, players_json, config_json) VALUES (?, ?, ?, ?)",
+                (
+                    team.id,
+                    team.name,
+                    json.dumps([{"id": player.id, "name": player.name} for player in team.players]),
+                    config_payload,
+                ),
+            )
+            conn.commit()
+
+    def reset(self) -> None:
+        with self._connect() as conn:
+            conn.execute("DELETE FROM teams")
+            conn.commit()
+
+    def db_exists(self) -> bool:
+        return Path(self.db_path).exists()
+
+
+class SQLiteGameRepository(GameRepository):
+    def __init__(self, db_path: str | None = None) -> None:
+        self.db_path = str(db_path or settings.DB_PATH)
+        self.initialize()
+
+    def _connect(self) -> sqlite3.Connection:
+        for _ in range(20):
+            try:
+                conn = sqlite3.connect(self.db_path, timeout=30.0)
+                conn.execute("PRAGMA busy_timeout = 30000")
+                conn.execute("PRAGMA journal_mode = WAL")
+                return conn
+            except sqlite3.OperationalError:
+                time.sleep(0.25)
+        return sqlite3.connect(self.db_path, timeout=30.0)
+
+    def initialize(self) -> None:
+        settings.ensure_db_dir()
+        with self._connect() as conn:
+            conn.execute(
+                "CREATE TABLE IF NOT EXISTS games (id TEXT PRIMARY KEY, team_id TEXT NOT NULL, date TEXT NOT NULL, "
+                "lineup_spins_json TEXT NOT NULL, selected_lineup_id TEXT)"
+            )
+            conn.commit()
+
+    def _init_db(self) -> None:
+        self.initialize()
+
+    def get(self, game_id: str) -> Game | None:
+        with self._connect() as conn:
+            row = conn.execute(
+                "SELECT id, team_id, date, lineup_spins_json, selected_lineup_id FROM games WHERE id = ?",
+                (game_id,),
+            ).fetchone()
+        if not row:
+            return None
+        game_id, team_id, date, lineup_spins_json, selected_lineup_id = row
+        spins_data = json.loads(lineup_spins_json)
+        spins = [
+            LineupSpin(
+                id=item["id"],
+                number=item.get("number", 1),
+                players=[Player(id=player["id"], name=player["name"]) for player in item.get("players", [])],
+                created_at=item.get("created_at"),
+                solution_snapshot=item.get("solution_snapshot"),
+                config_snapshot=item.get("config_snapshot"),
+                away_players=item.get("away_players", []),
+            )
+            for item in spins_data
+        ]
+        return Game(id=game_id, team_id=team_id, date=date, lineup_spins=spins, selected_lineup_id=selected_lineup_id)
+
+    def get_by_team_and_date(self, team_id: str, date: str) -> Game | None:
+        with self._connect() as conn:
+            row = conn.execute(
+                "SELECT id, team_id, date, lineup_spins_json, selected_lineup_id "
+                "FROM games WHERE team_id = ? AND date = ?",
+                (team_id, date),
+            ).fetchone()
+        if not row:
+            return None
+        game_id, team_id, date, lineup_spins_json, selected_lineup_id = row
+        spins_data = json.loads(lineup_spins_json)
+        spins = [
+            LineupSpin(
+                id=item["id"],
+                number=item.get("number", 1),
+                players=[Player(id=player["id"], name=player["name"]) for player in item.get("players", [])],
+                created_at=item.get("created_at"),
+                solution_snapshot=item.get("solution_snapshot"),
+                config_snapshot=item.get("config_snapshot"),
+                away_players=item.get("away_players", []),
+            )
+            for item in spins_data
+        ]
+        return Game(id=game_id, team_id=team_id, date=date, lineup_spins=spins, selected_lineup_id=selected_lineup_id)
+
+    def list(self) -> list[Game]:
+        with self._connect() as conn:
+            rows = conn.execute(
+                "SELECT id, team_id, date, lineup_spins_json, selected_lineup_id FROM games ORDER BY date"
+            ).fetchall()
+        games: list[Game] = []
+        for game_id, team_id, date, lineup_spins_json, selected_lineup_id in rows:
+            spins_data = json.loads(lineup_spins_json)
+            spins = [
+                LineupSpin(
+                    id=item["id"],
+                    number=item.get("number", 1),
+                    players=[Player(id=player["id"], name=player["name"]) for player in item.get("players", [])],
+                    created_at=item.get("created_at"),
+                    solution_snapshot=item.get("solution_snapshot"),
+                    config_snapshot=item.get("config_snapshot"),
+                    away_players=item.get("away_players", []),
+                )
+                for item in spins_data
+            ]
+            games.append(
+                Game(id=game_id, team_id=team_id, date=date, lineup_spins=spins, selected_lineup_id=selected_lineup_id)
+            )
+        return games
+
+    def save(self, game: Game) -> None:
+        with self._connect() as conn:
+            conn.execute(
+                "INSERT OR REPLACE INTO games (id, team_id, date, lineup_spins_json, selected_lineup_id) "
+                "VALUES (?, ?, ?, ?, ?)",
+                (
+                    game.id,
+                    game.team_id,
+                    game.date,
+                    json.dumps(
+                        [
+                            {
+                                "id": spin.id,
+                                "number": spin.number,
+                                "players": [{"id": player.id, "name": player.name} for player in spin.players],
+                                "created_at": spin.created_at or datetime.now(UTC).isoformat(),
+                                "solution_snapshot": spin.solution_snapshot,
+                                "config_snapshot": spin.config_snapshot,
+                                "away_players": spin.away_players,
+                            }
+                            for spin in game.lineup_spins
+                        ]
+                    ),
+                    game.selected_lineup_id,
+                ),
+            )
+            conn.commit()
+
+    def reset(self) -> None:
+        with self._connect() as conn:
+            conn.execute("DELETE FROM games")
+            conn.commit()
+
+    def db_exists(self) -> bool:
+        return Path(self.db_path).exists()

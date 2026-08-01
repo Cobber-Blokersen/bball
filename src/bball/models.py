@@ -2,28 +2,17 @@ from __future__ import annotations
 
 import uuid
 from dataclasses import dataclass, field
-
-DEFAULT_POWER_COMBOS = [
-    ["Mila", "Katrina"],
-    ["Hannah", "Sanavi"],
-    ["Indie", "Scarlett"],
-]
-DEFAULT_REQUIRED_FINAL_PERIOD_PLAYERS = ["Mila", "Katrina"]
-DEFAULT_PERIODS_PER_HALF = [6, 6]
-DEFAULT_ON_COURT_PER_PERIOD = 5
-DEFAULT_MINUTES_PER_HALF = 20
+from typing import Any
 
 
 @dataclass(slots=True)
 class LineupConfig:
     team: Team
-    power_combos: list[list[str]] = field(default_factory=lambda: [list(combo) for combo in DEFAULT_POWER_COMBOS])
-    required_final_period_players: list[str] = field(
-        default_factory=lambda: list(DEFAULT_REQUIRED_FINAL_PERIOD_PLAYERS)
-    )
-    periods_per_half: list[int] = field(default_factory=lambda: list(DEFAULT_PERIODS_PER_HALF))
-    on_court_per_period: int = DEFAULT_ON_COURT_PER_PERIOD
-    minutes_per_half: int = DEFAULT_MINUTES_PER_HALF
+    power_combos: list[list[str]] = field(default_factory=list)
+    required_final_period_players: list[str] = field(default_factory=list)
+    periods_per_half: list[int] = field(default_factory=lambda: [6, 6])
+    on_court_per_period: int = 5
+    minutes_per_half: int = 20
 
 
 @dataclass(slots=True)
@@ -62,7 +51,7 @@ class LineupSpin:
     number: int = 1
     players: list[Player] = field(default_factory=list)
     created_at: str | None = None
-    display_data: dict[str, list[list[str]] | str] | None = None
+    solution_snapshot: dict[str, Any] | None = None
     config_snapshot: dict[str, Any] | None = None
     away_players: list[str] = field(default_factory=list)
 
