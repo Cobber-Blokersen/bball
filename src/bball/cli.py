@@ -233,7 +233,7 @@ def render_solution_display_data(
                 console.print(f"[bold]Must be on at the end[/bold]: {', '.join(required_players)}")
             never_on_first_players = config_snapshot.get("never_on_first_period_players", [])
             if never_on_first_players:
-                console.print(f"[bold]Never on at the start[/bold]: {', '.join(never_on_first_players)}")
+                console.print(f"[bold]Always start off[/bold]: {', '.join(never_on_first_players)}")
 
         if stats_rows:
             console.print()
@@ -326,7 +326,6 @@ def build_co_play_stats(solution_snapshot: dict[str, Any]) -> list[tuple[str, st
     if not player_periods:
         return []
 
-    player_names = [player_period.get("player", "") for player_period in player_periods]
     pair_counts: dict[tuple[str, str], int] = {}
 
     for period_idx in range(len(player_periods[0].get("on", []))):
@@ -767,7 +766,9 @@ def show_spin(
     team_name: Annotated[str, typer.Argument(help="Team name")],
     game_name: Annotated[str, typer.Argument(help="Game identifier")],
     spin_number: Annotated[int, typer.Argument(help="Spin number")],
-    hl: Annotated[list[str], typer.Option("--hl", help="Player names to highlight in reverse colors.", default_factory=list)],
+    hl: Annotated[
+        list[str], typer.Option("--hl", help="Player names to highlight in reverse colors.", default_factory=list)
+    ],
     stats: Annotated[bool, typer.Option("--stats", help="Show co-play statistics for the selected spin.")] = False,
 ) -> None:
     """Show the full stored output for a specific spin."""
@@ -817,7 +818,7 @@ def show_spin(
             console.print(f"[bold]Must be on at the end[/bold]: {', '.join(required_players)}")
         never_on_first_players = spin.config_snapshot.get("never_on_first_period_players", [])
         if never_on_first_players:
-            console.print(f"[bold]Never on at the start[/bold]: {', '.join(never_on_first_players)}")
+            console.print(f"[bold]Always start off[/bold]: {', '.join(never_on_first_players)}")
 
 
 @spin_app.command("run", help="Generate a new lineup spin for a team and game.", no_args_is_help=True)
@@ -828,7 +829,9 @@ def run_spin(
     start_players: Annotated[
         list[str], typer.Option("--start", help="Player name(s) for the opening lineup.", default_factory=list)
     ],
-    hl: Annotated[list[str], typer.Option("--hl", help="Player names to highlight in reverse colors.", default_factory=list)],
+    hl: Annotated[
+        list[str], typer.Option("--hl", help="Player names to highlight in reverse colors.", default_factory=list)
+    ],
 ) -> None:
     """Generate a new lineup spin for a team/game."""
     team = load_team(team_name)
@@ -836,7 +839,9 @@ def run_spin(
 
     normalized_start_players = normalize_player_argument_values(start_players)
     forbidden_start_players = set(config.never_on_first_period_players)
-    conflicting_start_players = [player_name for player_name in normalized_start_players if player_name in forbidden_start_players]
+    conflicting_start_players = [
+        player_name for player_name in normalized_start_players if player_name in forbidden_start_players
+    ]
     if conflicting_start_players:
         typer.echo(
             f"Cannot start the game with players who are marked never-on-first: {', '.join(conflicting_start_players)}"

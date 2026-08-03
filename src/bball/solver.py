@@ -65,8 +65,9 @@ def build_starting_lineup(
     requested_start_players: list[str],
     max_starters: int,
     forbidden_start_players: list[str] | None = None,
+    power_combos: list[list[str]] | None = None,
 ) -> list[str]:
-    """Build the opening-day starting lineup from requested starters and random fill-ins."""
+    """Build the opening-day starting lineup from requested starters, power combos, and random fill-ins."""
     active_player_set = set(active_players)
     forbidden_player_set = set(forbidden_start_players or [])
     requested_starters = [
@@ -75,9 +76,30 @@ def build_starting_lineup(
         if player_name in active_player_set and player_name not in forbidden_player_set
     ]
 
-    starters = requested_starters[:max_starters]
+    if requested_starters:
+        starters = requested_starters[:max_starters]
+    else:
+        starters = []
+        seen_starters: set[str] = set()
+        if power_combos:
+            for power_combo in power_combos:
+                for player_name in power_combo:
+                    if (
+                        player_name in active_player_set
+                        and player_name not in forbidden_player_set
+                        and player_name not in seen_starters
+                    ):
+                        starters.append(player_name)
+                        seen_starters.add(player_name)
+                        if len(starters) >= max_starters:
+                            break
+                if len(starters) >= max_starters:
+                    break
+
     remaining_players = [
-        player_name for player_name in active_players if player_name not in starters and player_name not in forbidden_player_set
+        player_name
+        for player_name in active_players
+        if player_name not in starters and player_name not in forbidden_player_set
     ]
     if len(starters) < max_starters:
         random_fill = random.sample(
@@ -502,6 +524,7 @@ def solve_team_lineup(  # noqa: PLR0917
         requested_start_players,
         config.on_court_per_period,
         forbidden_start_players=never_on_first_period_players,
+        power_combos=active_power_combos,
     )
 
     if len(config.periods_per_half) != 2:
@@ -597,6 +620,7 @@ def solve_team_lineup(  # noqa: PLR0917
                 config_snapshot={
                     "power_combos": active_power_combos,
                     "required_final_period_players": required_final_period_players,
+                    "never_on_first_period_players": never_on_first_period_players,
                     "periods_per_half": list(config.periods_per_half),
                     "on_court_per_period": config.on_court_per_period,
                     "minutes_per_half": config.minutes_per_half,
@@ -625,6 +649,7 @@ def solve_team_lineup(  # noqa: PLR0917
                 config_snapshot={
                     "power_combos": active_power_combos,
                     "required_final_period_players": required_final_period_players,
+                    "never_on_first_period_players": never_on_first_period_players,
                     "periods_per_half": list(config.periods_per_half),
                     "on_court_per_period": config.on_court_per_period,
                     "minutes_per_half": config.minutes_per_half,

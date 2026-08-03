@@ -91,6 +91,21 @@ def test_build_starting_lineup_excludes_never_on_first_players() -> None:
     assert set(starting_lineup).isdisjoint({"Ace", "Bo"})
 
 
+def test_build_starting_lineup_prefers_power_combos_when_no_start_requested() -> None:
+    active_players = ["Ace", "Bo", "Cara", "Drew", "Eli", "Finn", "Gus"]
+
+    starting_lineup = build_starting_lineup(
+        active_players,
+        [],
+        5,
+        power_combos=[["Ace", "Bo"], ["Cara", "Drew"]],
+    )
+
+    assert len(starting_lineup) == 5
+    assert {"Ace", "Bo"}.issubset(starting_lineup)
+    assert set(starting_lineup).issubset(set(active_players))
+
+
 def test_render_data_highlights_requested_players() -> None:
     solution_snapshot = {
         "status": "OPTIMAL",
@@ -592,7 +607,9 @@ def test_system_db_create_uses_repository_initialization(monkeypatch: MonkeyPatc
     monkeypatch.setattr(
         "bball.cli.get_repository_classes",
         lambda: settings.RepositoryClasses(
-            player=FakeRepository, team=FakeRepository, game=FakeRepository  # type: ignore
+            player=FakeRepository,  # type: ignore
+            team=FakeRepository,  # type: ignore
+            game=FakeRepository,  # type: ignore
         ),
     )
     monkeypatch.setattr("bball.cli.settings.DB_PATH", Path("./tmp/ignored.sqlite3"))
