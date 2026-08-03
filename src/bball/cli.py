@@ -8,7 +8,7 @@ from rich.console import Console
 from rich.table import Table
 
 from . import settings
-from .models import LineupConfig, Player, Team
+from .models import LineupConfig, Player, Team, get_boolean_preference_definitions
 from .solver import normalize_player_argument_values, solve_team_lineup
 
 PLAYER_CONSOLE_COLORS = [
@@ -27,6 +27,7 @@ team_app = typer.Typer(help="Team-related commands", no_args_is_help=True)
 rule_app = typer.Typer(help="Team rule management commands", no_args_is_help=True)
 power_combo_app = typer.Typer(help="Power-combo rule commands", no_args_is_help=True)
 cleanup_app = typer.Typer(help="Cleanup-rule commands", no_args_is_help=True)
+never_on_first_app = typer.Typer(help="Opening-lineup rule commands", no_args_is_help=True)
 game_app = typer.Typer(help="Game-related commands", no_args_is_help=True)
 spin_app = typer.Typer(help="Spin-related commands", no_args_is_help=True)
 system_app = typer.Typer(help="System maintenance commands", no_args_is_help=True)
@@ -35,6 +36,7 @@ app.add_typer(team_app, name="team")
 team_app.add_typer(rule_app, name="rule")
 rule_app.add_typer(power_combo_app, name="power-combo")
 rule_app.add_typer(cleanup_app, name="cleanup")
+rule_app.add_typer(never_on_first_app, name="never-on-first")
 app.add_typer(game_app, name="game")
 game_app.add_typer(spin_app, name="spin")
 app.add_typer(system_app, name="system")
@@ -84,20 +86,36 @@ def load_team(team_name: str) -> Team:
     raise KeyError(f"Unknown team: {team_name}")
 
 
-def format_player_name_for_display(player_name: str, player_index_by_name: dict[str, int]) -> str:
-    """Return a Rich-formatted player name using a stable color."""
+def format_player_name_for_display(
+    player_name: str,
+    player_index_by_name: dict[str, int],
+    highlighted_player_names: set[str] | None = None,
+) -> str:
+    """Return a Rich-formatted player name using a stable color, optionally with reverse-video highlighting."""
     if player_name in player_index_by_name:
         player_index = player_index_by_name[player_name]
         color = PLAYER_CONSOLE_COLORS[player_index % len(PLAYER_CONSOLE_COLORS)]
     else:
         color = "white"
+
+    if highlighted_player_names and player_name in highlighted_player_names:
+        return f"[{color} reverse]{player_name}[/{color} reverse]"
     return f"[{color}]{player_name}[/{color}]"
 
 
-def format_player_names_for_display(player_names: list[str], player_index_by_name: dict[str, int]) -> str:
+def format_player_names_for_display(
+    player_names: list[str],
+    player_index_by_name: dict[str, int],
+    highlighted_player_names: set[str] | None = None,
+) -> str:
     """Format a list of player names for display in a single table cell."""
     return ", ".join(
-        format_player_name_for_display(player_name, player_index_by_name) for player_name in sorted(player_names)
+        format_player_name_for_display(
+            player_name,
+            player_index_by_name,
+            highlighted_player_names=highlighted_player_names,
+        )
+        for player_name in sorted(player_names)
     )
 
 
@@ -110,6 +128,15 @@ def normalize_player_input(player_inputs: list[str]) -> list[str]:
             if cleaned:
                 normalized.append(cleaned)
     return normalized
+
+
+def validate_players_are_team_members(team: Team, player_names: list[str]) -> None:
+    """Reject any requested player names that are not currently on the team's roster."""
+    known_player_names = {player.name for player in team.players}
+    unknown_players = [player_name for player_name in player_names if player_name not in known_player_names]
+    if unknown_players:
+        typer.echo(f"Unknown player{'s' if len(unknown_players) != 1 else ''}: {', '.join(unknown_players)}")
+        raise typer.Exit(code=1)
 
 
 def render_team_rules_table(team: Team) -> None:
@@ -134,10 +161,20 @@ def render_team_rules_table(team: Team) -> None:
     else:
         table.add_row("Must be on at the end", "(none)")
 
+    if config.never_on_first_period_players:
+        table.add_row("Never on at the start", ", ".join(config.never_on_first_period_players))
+    else:
+        table.add_row("Never on at the start", "(none)")
+
     console.print(table)
 
 
-def render_solution_display_data(display_data: dict[str, Any], config_snapshot: dict[str, Any] | None = None) -> None:
+def render_solution_display_data(
+    display_data: dict[str, Any],
+    config_snapshot: dict[str, Any] | None = None,
+    stats_rows: list[tuple[str, str, int]] | None = None,
+    highlighted_player_names: set[str] | None = None,
+) -> None:
     """Render solved schedule tables and summary details from precomputed display data."""
     console = Console(force_terminal=True, color_system="truecolor")
     status = display_data.get("status", "UNKNOWN")
@@ -194,11 +231,27 @@ def render_solution_display_data(display_data: dict[str, Any], config_snapshot: 
             required_players = config_snapshot.get("required_final_period_players", [])
             if required_players:
                 console.print(f"[bold]Must be on at the end[/bold]: {', '.join(required_players)}")
+            never_on_first_players = config_snapshot.get("never_on_first_period_players", [])
+            if never_on_first_players:
+                console.print(f"[bold]Never on at the start[/bold]: {', '.join(never_on_first_players)}")
+
+        if stats_rows:
+            console.print()
+            console.print("[bold]Co-play stats[/bold]")
+            stats_table = Table(show_header=True, header_style="bold cyan", border_style="blue")
+            stats_table.add_column("Players")
+            stats_table.add_column("Count")
+            for player_pair, _, count in stats_rows:
+                stats_table.add_row(player_pair, str(count))
+            console.print(stats_table)
     else:
         console.print("No solution found.")
 
 
-def build_render_data_from_solution_snapshot(solution_snapshot: dict[str, Any]) -> dict[str, Any]:
+def build_render_data_from_solution_snapshot(
+    solution_snapshot: dict[str, Any],
+    highlighted_player_names: set[str] | None = None,
+) -> dict[str, Any]:
     status = solution_snapshot.get("status", "UNKNOWN")
     players = solution_snapshot.get("players", [])
     periods_per_half = solution_snapshot.get("periods_per_half", [0, 0])
@@ -227,8 +280,16 @@ def build_render_data_from_solution_snapshot(solution_snapshot: dict[str, Any]) 
         row = (
             str(period_idx + 1),
             period_start_time,
-            format_player_names_for_display(on_court, player_index_by_name),
-            format_player_names_for_display(off_court, player_index_by_name),
+            format_player_names_for_display(
+                on_court,
+                player_index_by_name,
+                highlighted_player_names=highlighted_player_names,
+            ),
+            format_player_names_for_display(
+                off_court,
+                player_index_by_name,
+                highlighted_player_names=highlighted_player_names,
+            ),
         )
         if period_idx < periods_per_half[0]:
             first_half_rows.append(row)
@@ -240,7 +301,15 @@ def build_render_data_from_solution_snapshot(solution_snapshot: dict[str, Any]) 
         on_count = sum(bool(on_value) for on_value in player_period.get("on", []))
         off_count = len(period_start_times) - on_count
         summary_rows.append(
-            (format_player_name_for_display(player_name, player_index_by_name), str(on_count), str(off_count))
+            (
+                format_player_name_for_display(
+                    player_name,
+                    player_index_by_name,
+                    highlighted_player_names=highlighted_player_names,
+                ),
+                str(on_count),
+                str(off_count),
+            )
         )
 
     return {
@@ -251,16 +320,66 @@ def build_render_data_from_solution_snapshot(solution_snapshot: dict[str, Any]) 
     }
 
 
+def build_co_play_stats(solution_snapshot: dict[str, Any]) -> list[tuple[str, str, int]]:
+    """Return player-pair co-play counts sorted by descending frequency."""
+    player_periods = solution_snapshot.get("player_periods", [])
+    if not player_periods:
+        return []
+
+    player_names = [player_period.get("player", "") for player_period in player_periods]
+    pair_counts: dict[tuple[str, str], int] = {}
+
+    for period_idx in range(len(player_periods[0].get("on", []))):
+        on_court_players = [
+            player_name
+            for player_period in player_periods
+            if bool(player_period.get("on", [False])[period_idx])
+            for player_name in [player_period.get("player", "")]
+        ]
+        if len(on_court_players) < 2:
+            continue
+        for index, player_name in enumerate(on_court_players):
+            for other_player in on_court_players[index + 1 :]:
+                pair = tuple(sorted((player_name, other_player)))
+                pair_counts[pair] = pair_counts.get(pair, 0) + 1
+
+    return [
+        (f"{left} / {right}", "", count)
+        for (left, right), count in sorted(pair_counts.items(), key=lambda item: (-item[1], item[0][0], item[0][1]))
+    ]
+
+
 @team_app.command("add", help="Create a new team with the provided players.", no_args_is_help=True)
 def add_team(
     team_name: Annotated[str, typer.Argument(help="Team name")],
     player_names: Annotated[list[str], typer.Argument(help="Player names to add to the team")],
 ) -> None:
     """Create a new team with the provided players."""
+    if len(player_names) == 1 and "," in player_names[0]:
+        player_names = normalize_player_argument_values(player_names)
     team_repo = get_repository_classes().team()
     team = Team(name=team_name, players=[Player(name=player_name) for player_name in player_names])
     team_repo.save(team)
     typer.echo(f"Created team {team.name}")
+
+
+@team_app.command("remove", help="Remove a team and all associated config and games.", no_args_is_help=True)
+def remove_team(
+    team_name: Annotated[str, typer.Argument(help="Team name")],
+) -> None:
+    """Delete a team after confirmation, including its config and games."""
+    team = load_team(team_name)
+    confirm = typer.confirm("Are you sure?")
+    if not confirm:
+        typer.echo("Aborted")
+        raise typer.Exit()
+
+    team_repo = get_repository_classes().team()
+    game_repo = get_repository_classes().game()
+    game_repo.delete_by_team(team.id)
+    team_repo.delete(team.id)
+
+    typer.echo(f"Removed team {team.name}")
 
 
 @team_app.command("list", help="List available teams.")
@@ -303,6 +422,68 @@ def show_team(team_name: Annotated[str, typer.Argument(help="Team name")]) -> No
     if config.required_final_period_players:
         required_players = ", ".join(config.required_final_period_players)
         console.print(f"\n[bold]Must be on at the end[/bold]: {required_players}")
+
+    if config.never_on_first_period_players:
+        required_players = ", ".join(config.never_on_first_period_players)
+        console.print(f"\n[bold]Never on at the start[/bold]: {required_players}")
+
+
+@team_app.command("preference-list", help="List the team's configurable lineup preferences.", no_args_is_help=True)
+def list_team_preferences(team_name: Annotated[str, typer.Argument(help="Team name")]) -> None:
+    """Show all configurable boolean lineup preferences for a team."""
+    team = load_team(team_name)
+    config = team.lineup_config or LineupConfig(team=team)
+
+    console = Console()
+    table = Table(show_header=True, header_style="bold cyan")
+    table.add_column("Preference Key")
+    table.add_column("Enabled")
+    table.add_column("Description")
+
+    for definition in get_boolean_preference_definitions():
+        enabled = config.boolean_preferences.get(definition.key, definition.default_enabled)
+        table.add_row(
+            definition.key,
+            "yes" if enabled else "no",
+            definition.detailed_description,
+        )
+
+    console.print(table)
+
+
+@team_app.command("preference-toggle", help="Enable or disable a team lineup preference.", no_args_is_help=True)
+def toggle_team_preference(
+    team_name: Annotated[str, typer.Argument(help="Team name")],
+    preference_key: Annotated[str, typer.Argument(help="Preference key")],
+    enable: Annotated[bool, typer.Option("--enable", help="Enable the preference")] = False,
+    disable: Annotated[bool, typer.Option("--disable", help="Disable the preference")] = False,
+) -> None:
+    """Toggle a team-specific boolean lineup preference."""
+    team = load_team(team_name)
+    team_repo = get_repository_classes().team()
+    config = team.lineup_config or LineupConfig(team=team)
+
+    definitions_by_key = {definition.key: definition for definition in get_boolean_preference_definitions()}
+    if preference_key not in definitions_by_key:
+        available = ", ".join(sorted(definitions_by_key))
+        raise typer.BadParameter(f"Unknown preference key. Available options: {available}")
+
+    current_value = config.boolean_preferences.get(preference_key, definitions_by_key[preference_key].default_enabled)
+    if enable and disable:
+        raise typer.BadParameter("Use either --enable or --disable, not both")
+    if enable:
+        new_value = True
+    elif disable:
+        new_value = False
+    else:
+        new_value = not current_value
+
+    config.boolean_preferences[preference_key] = new_value
+    team.lineup_config = config
+    team_repo.save(team)
+
+    state = "enabled" if new_value else "disabled"
+    typer.echo(f"{definitions_by_key[preference_key].name}: {state}")
 
 
 @team_app.command("player-add", help="Add one or more players to a team roster.", no_args_is_help=True)
@@ -381,6 +562,7 @@ def add_power_combo(
     config = team.lineup_config or LineupConfig(team=team)
 
     combo = normalize_player_input(player_names)
+    validate_players_are_team_members(team, combo)
     if len(combo) < 2:
         typer.echo("Power combos require at least two players")
         raise typer.Exit(code=1)
@@ -409,6 +591,64 @@ def remove_power_combo(
     team.lineup_config = config
     team_repo.save(team)
     typer.echo(f"Removed power combo {combo_number} from {team.name}")
+
+
+@never_on_first_app.command("list", help="List the players who should never start the game.", no_args_is_help=True)
+def list_never_on_first_players(team_name: Annotated[str, typer.Argument(help="Team name")]) -> None:
+    """List the players who should never start the game."""
+    team = load_team(team_name)
+    config = team.lineup_config or LineupConfig(team=team)
+
+    console = Console()
+    table = Table(show_header=True, header_style="bold cyan")
+    table.add_column("#")
+    table.add_column("Player")
+    for index, player_name in enumerate(config.never_on_first_period_players, start=1):
+        table.add_row(str(index), player_name)
+    if not config.never_on_first_period_players:
+        table.add_row("-", "(none)")
+    console.print(table)
+
+
+@never_on_first_app.command("add", help="Add players who should never start the game.", no_args_is_help=True)
+def add_never_on_first_players(
+    team_name: Annotated[str, typer.Argument(help="Team name")],
+    player_names: Annotated[list[str], typer.Argument(help="Players who should never start the game")],
+) -> None:
+    """Add players who should never be on court in the opening period."""
+    team = load_team(team_name)
+    team_repo = get_repository_classes().team()
+    config = team.lineup_config or LineupConfig(team=team)
+
+    normalized_player_names = normalize_player_input(player_names)
+    validate_players_are_team_members(team, normalized_player_names)
+    for player_name in normalized_player_names:
+        if player_name not in config.never_on_first_period_players:
+            config.never_on_first_period_players.append(player_name)
+
+    team.lineup_config = config
+    team_repo.save(team)
+    typer.echo(f"Added never-on-first players to {team.name}")
+
+
+@never_on_first_app.command("remove", help="Remove a never-on-first player by number.", no_args_is_help=True)
+def remove_never_on_first_player(
+    team_name: Annotated[str, typer.Argument(help="Team name")],
+    player_number: Annotated[int, typer.Argument(help="Never-on-first player number to remove")],
+) -> None:
+    """Remove a never-on-first player by its displayed number."""
+    team = load_team(team_name)
+    team_repo = get_repository_classes().team()
+    config = team.lineup_config or LineupConfig(team=team)
+
+    if player_number < 1 or player_number > len(config.never_on_first_period_players):
+        typer.echo("No such never-on-first player")
+        raise typer.Exit(code=1)
+
+    del config.never_on_first_period_players[player_number - 1]
+    team.lineup_config = config
+    team_repo.save(team)
+    typer.echo(f"Removed never-on-first player {player_number} from {team.name}")
 
 
 @cleanup_app.command(
@@ -440,7 +680,9 @@ def add_cleanup_players(
     team_repo = get_repository_classes().team()
     config = team.lineup_config or LineupConfig(team=team)
 
-    for player_name in normalize_player_input(player_names):
+    normalized_player_names = normalize_player_input(player_names)
+    validate_players_are_team_members(team, normalized_player_names)
+    for player_name in normalized_player_names:
         if player_name not in config.required_final_period_players:
             config.required_final_period_players.append(player_name)
 
@@ -525,6 +767,8 @@ def show_spin(
     team_name: Annotated[str, typer.Argument(help="Team name")],
     game_name: Annotated[str, typer.Argument(help="Game identifier")],
     spin_number: Annotated[int, typer.Argument(help="Spin number")],
+    hl: Annotated[list[str], typer.Option("--hl", help="Player names to highlight in reverse colors.", default_factory=list)],
+    stats: Annotated[bool, typer.Option("--stats", help="Show co-play statistics for the selected spin.")] = False,
 ) -> None:
     """Show the full stored output for a specific spin."""
     team = load_team(team_name)
@@ -545,8 +789,17 @@ def show_spin(
 
     solution_snapshot = spin.solution_snapshot
     if solution_snapshot:
-        display_data = build_render_data_from_solution_snapshot(solution_snapshot)
-        render_solution_display_data(display_data)
+        display_data = build_render_data_from_solution_snapshot(
+            solution_snapshot,
+            highlighted_player_names=set(normalize_player_argument_values(hl)),
+        )
+        stats_rows = build_co_play_stats(solution_snapshot) if stats else None
+        highlighted_player_names = set(normalize_player_argument_values(hl))
+        render_solution_display_data(
+            display_data,
+            stats_rows=stats_rows,
+            highlighted_player_names=highlighted_player_names,
+        )
     else:
         typer.echo("No solution found.")
 
@@ -562,6 +815,9 @@ def show_spin(
         required_players = spin.config_snapshot.get("required_final_period_players", [])
         if required_players:
             console.print(f"[bold]Must be on at the end[/bold]: {', '.join(required_players)}")
+        never_on_first_players = spin.config_snapshot.get("never_on_first_period_players", [])
+        if never_on_first_players:
+            console.print(f"[bold]Never on at the start[/bold]: {', '.join(never_on_first_players)}")
 
 
 @spin_app.command("run", help="Generate a new lineup spin for a team and game.", no_args_is_help=True)
@@ -572,19 +828,28 @@ def run_spin(
     start_players: Annotated[
         list[str], typer.Option("--start", help="Player name(s) for the opening lineup.", default_factory=list)
     ],
+    hl: Annotated[list[str], typer.Option("--hl", help="Player names to highlight in reverse colors.", default_factory=list)],
 ) -> None:
     """Generate a new lineup spin for a team/game."""
     team = load_team(team_name)
     config = team.lineup_config or LineupConfig(team=team)
+
+    normalized_start_players = normalize_player_argument_values(start_players)
+    forbidden_start_players = set(config.never_on_first_period_players)
+    conflicting_start_players = [player_name for player_name in normalized_start_players if player_name in forbidden_start_players]
+    if conflicting_start_players:
+        typer.echo(
+            f"Cannot start the game with players who are marked never-on-first: {', '.join(conflicting_start_players)}"
+        )
+        raise typer.Exit(code=1)
+
     game = solve_team_lineup(
         team,
         away_player_names=normalize_player_argument_values(away_players),
-        requested_start_players=normalize_player_argument_values(start_players),
+        requested_start_players=normalized_start_players,
         config=config,
         game_repo=get_repository_classes().game(),
         game_date=game_name,
-        render_output=False,
-        player_console_colors=PLAYER_CONSOLE_COLORS,
     )
     if game is None:
         typer.echo("No solution found.")
@@ -592,8 +857,16 @@ def run_spin(
 
     spin = game.lineup_spins[-1]
     if spin.solution_snapshot:
-        display_data = build_render_data_from_solution_snapshot(spin.solution_snapshot)
-        render_solution_display_data(display_data, config_snapshot=spin.config_snapshot)
+        display_data = build_render_data_from_solution_snapshot(
+            spin.solution_snapshot,
+            highlighted_player_names=set(normalize_player_argument_values(hl)),
+        )
+        highlighted_player_names = set(normalize_player_argument_values(hl))
+        render_solution_display_data(
+            display_data,
+            config_snapshot=spin.config_snapshot,
+            highlighted_player_names=highlighted_player_names,
+        )
 
 
 @spin_app.command("prune", help="Delete all spins for a team and game after confirmation.", no_args_is_help=True)

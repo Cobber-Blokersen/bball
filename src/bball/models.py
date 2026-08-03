@@ -5,14 +5,61 @@ from dataclasses import dataclass, field
 from typing import Any
 
 
+@dataclass(slots=True, frozen=True)
+class LineupPreferenceDefinition:
+    key: str
+    name: str
+    brief_description: str
+    detailed_description: str
+    default_enabled: bool = True
+
+
+BOOLEAN_PREFERENCE_DEFINITIONS: tuple[LineupPreferenceDefinition, ...] = (
+    LineupPreferenceDefinition(
+        key="no_consecutive_off",
+        name="Avoid back-to-back rests",
+        brief_description="Keep each player from sitting in consecutive periods.",
+        detailed_description="Prevents players from being off the court in two consecutive periods so players rotate more smoothly.",
+    ),
+    LineupPreferenceDefinition(
+        key="half_split_balance",
+        name="Balance first and second halves",
+        brief_description="Spread playtime evenly between the two halves.",
+        detailed_description="Penalizes large first-half versus second-half playtime imbalances for each player.",
+    ),
+    LineupPreferenceDefinition(
+        key="transition_constraints",
+        name="Anchor opening and closing periods",
+        brief_description="Link the opening lineup to the half break and the end of the game.",
+        detailed_description="Requires each player to be on the court in the opening period or at the second-half start, and in the opening period or the final period.",
+    ),
+    LineupPreferenceDefinition(
+        key="power_combo_objective",
+        name="Prefer power combos",
+        brief_description="Favor periods where configured strong player combos are together.",
+        detailed_description="Adds a soft preference for configured player combos being on the court together.",
+    ),
+)
+
+
+def get_boolean_preference_definitions() -> tuple[LineupPreferenceDefinition, ...]:
+    return BOOLEAN_PREFERENCE_DEFINITIONS
+
+
+def build_default_boolean_preferences() -> dict[str, bool]:
+    return {definition.key: definition.default_enabled for definition in BOOLEAN_PREFERENCE_DEFINITIONS}
+
+
 @dataclass(slots=True)
 class LineupConfig:
     team: Team
     power_combos: list[list[str]] = field(default_factory=list)
     required_final_period_players: list[str] = field(default_factory=list)
+    never_on_first_period_players: list[str] = field(default_factory=list)
     periods_per_half: list[int] = field(default_factory=lambda: [6, 6])
     on_court_per_period: int = 5
     minutes_per_half: int = 20
+    boolean_preferences: dict[str, bool] = field(default_factory=build_default_boolean_preferences)
 
 
 @dataclass(slots=True)

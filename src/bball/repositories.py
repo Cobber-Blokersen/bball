@@ -47,6 +47,10 @@ class TeamRepository(ABC):
         raise NotImplementedError
 
     @abstractmethod
+    def delete(self, team_id: str) -> None:
+        raise NotImplementedError
+
+    @abstractmethod
     def initialize(self) -> None:
         raise NotImplementedError
 
@@ -74,6 +78,14 @@ class GameRepository(ABC):
 
     @abstractmethod
     def save(self, game: Game) -> None:
+        raise NotImplementedError
+
+    @abstractmethod
+    def delete(self, game_id: str) -> None:
+        raise NotImplementedError
+
+    @abstractmethod
+    def delete_by_team(self, team_id: str) -> None:
         raise NotImplementedError
 
     @abstractmethod

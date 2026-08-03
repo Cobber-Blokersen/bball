@@ -3,7 +3,7 @@ from __future__ import annotations
 import argparse
 import random
 import uuid
-from datetime import datetime
+from datetime import UTC, datetime
 from typing import Any
 
 from ortools.sat.python.cp_model import FEASIBLE, OPTIMAL, CpModel, CpSolver
@@ -11,27 +11,6 @@ from ortools.sat.python.cp_model_helper import CpSolverStatus
 
 from .models import Game, LineupConfig, LineupSpin, Player, Team
 from .repositories import GameRepository
-
-
-def build_default_team() -> Team:
-    players = [
-        Player(name=name)
-        for name in [
-            "Indie",
-            "Scarlett",
-            "Mila",
-            "Katrina",
-            "Annabelle",
-            "Hannah",
-            "Sanavi",
-            "Bhakti",
-        ]
-    ]
-    return Team(
-        id="1463e55b-341c-4d75-a8ae-a70fc3fb36cc",
-        name="EDJBA Vikings U13 Girls 4 Winter 2026",
-        players=players,
-    )
 
 
 def normalize_player_argument_values(argument_values: list[str]) -> list[str]:
@@ -82,16 +61,24 @@ def build_active_player_indices(active_players: list[str]) -> dict[str, int]:
 
 
 def build_starting_lineup(
-    active_players: list[str], requested_start_players: list[str], max_starters: int
+    active_players: list[str],
+    requested_start_players: list[str],
+    max_starters: int,
+    forbidden_start_players: list[str] | None = None,
 ) -> list[str]:
     """Build the opening-day starting lineup from requested starters and random fill-ins."""
     active_player_set = set(active_players)
+    forbidden_player_set = set(forbidden_start_players or [])
     requested_starters = [
-        player_name for player_name in dict.fromkeys(requested_start_players) if player_name in active_player_set
+        player_name
+        for player_name in dict.fromkeys(requested_start_players)
+        if player_name in active_player_set and player_name not in forbidden_player_set
     ]
 
     starters = requested_starters[:max_starters]
-    remaining_players = [player_name for player_name in active_players if player_name not in starters]
+    remaining_players = [
+        player_name for player_name in active_players if player_name not in starters and player_name not in forbidden_player_set
+    ]
     if len(starters) < max_starters:
         random_fill = random.sample(
             remaining_players,
@@ -113,6 +100,12 @@ def filter_power_combos(active_players: list[str], power_combos: list[list[str]]
 
 def filter_required_final_period_players(active_players: list[str], required_player_names: list[str]) -> list[str]:
     """Remove any final-period requirements that refer to away players."""
+    active_player_set = set(active_players)
+    return [player_name for player_name in required_player_names if player_name in active_player_set]
+
+
+def filter_never_on_first_period_players(active_players: list[str], required_player_names: list[str]) -> list[str]:
+    """Remove any opening-period restrictions that refer to away players."""
     active_player_set = set(active_players)
     return [player_name for player_name in required_player_names if player_name in active_player_set]
 
@@ -200,14 +193,13 @@ def add_player_count_constraints(
         )
 
 
-def add_playtime_balance_constraints(
+def add_total_playtime_constraints(
     model: CpModel,
     is_on_court: dict[tuple[int, int], Any],
     num_players: int,
     num_periods: int,
-    periods_per_half: list[int],
 ) -> list[Any]:
-    """Balance total playing time across the roster and across the two (possibly uneven) halves."""
+    """Track each player's total on-court periods for even rotation across the roster."""
     total_periods_played = []
     for player_idx in range(num_players):
         total_periods_for_player = model.new_int_var(0, num_periods, f"total_p{player_idx}")
@@ -215,7 +207,16 @@ def add_playtime_balance_constraints(
             total_periods_for_player == sum(is_on_court[(player_idx, period_idx)] for period_idx in range(num_periods))
         )
         total_periods_played.append(total_periods_for_player)
+    return total_periods_played
 
+
+def add_pairwise_playtime_balance_constraints(
+    model: CpModel,
+    num_players: int,
+    num_periods: int,
+    total_periods_played: list[Any],
+) -> None:
+    """Keep every pair of players within one period of each other in total playing time."""
     for player_idx_a in range(num_players):
         for player_idx_b in range(num_players):
             if player_idx_a < player_idx_b:
@@ -230,6 +231,15 @@ def add_playtime_balance_constraints(
                 model.add(playing_time_difference <= 1)
                 model.add(playing_time_difference >= -1)
 
+
+def add_half_split_balance_constraints(
+    model: CpModel,
+    is_on_court: dict[tuple[int, int], Any],
+    num_players: int,
+    num_periods: int,
+    periods_per_half: list[int],
+) -> list[Any]:
+    """Penalize uneven first-half versus second-half playtime for each player."""
     first_half_periods = periods_per_half[0]
     second_half_periods = periods_per_half[1]
     second_half_start = first_half_periods
@@ -256,6 +266,19 @@ def add_playtime_balance_constraints(
     return off_balance_penalties
 
 
+def add_playtime_balance_constraints(
+    model: CpModel,
+    is_on_court: dict[tuple[int, int], Any],
+    num_players: int,
+    num_periods: int,
+    periods_per_half: list[int],
+) -> list[Any]:
+    """Balance total playtime and keep each half evenly distributed across the roster."""
+    total_periods_played = add_total_playtime_constraints(model, is_on_court, num_players, num_periods)
+    add_pairwise_playtime_balance_constraints(model, num_players, num_periods, total_periods_played)
+    return add_half_split_balance_constraints(model, is_on_court, num_players, num_periods, periods_per_half)
+
+
 def add_no_consecutive_off_constraints(
     model: CpModel,
     is_on_court: dict[tuple[int, int], Any],
@@ -280,7 +303,7 @@ def add_starting_lineup_constraints(
         model.add(is_on_court[(player_idx, 0)] == int(player_name in preferred_starting_player_set))
 
 
-def add_final_period_constraints(
+def add_final_period_mandatory_player_constraints(
     model: CpModel,
     is_on_court: dict[tuple[int, int], Any],
     player_indices: dict[str, int],
@@ -294,6 +317,21 @@ def add_final_period_constraints(
     required_player_indices = [player_indices[player_name] for player_name in required_player_names]
     required_player_vars = [is_on_court[(player_idx, num_periods - 1)] for player_idx in required_player_indices]
     model.add(sum(required_player_vars) >= 1)
+
+
+def add_never_on_first_constraints(
+    model: CpModel,
+    is_on_court: dict[tuple[int, int], Any],
+    player_indices: dict[str, int],
+    required_player_names: list[str],
+) -> None:
+    """Prevent designated players from being on court in the opening period."""
+    if not required_player_names:
+        return
+
+    required_player_indices = [player_indices[player_name] for player_name in required_player_names]
+    required_player_vars = [is_on_court[(player_idx, 0)] for player_idx in required_player_indices]
+    model.add(sum(required_player_vars) == 0)
 
 
 def add_transition_constraints(
@@ -442,8 +480,6 @@ def solve_team_lineup(  # noqa: PLR0917
     config: LineupConfig | None = None,
     game_repo: GameRepository | None = None,
     game_date: str | None = None,
-    render_output: bool = True,
-    player_console_colors: list[str] | None = None,
 ) -> Game | None:
     """Solve a lineup for a team and persist a simple game-day lineup spin."""
     away_player_names = away_player_names or []
@@ -458,7 +494,15 @@ def solve_team_lineup(  # noqa: PLR0917
     required_final_period_players = filter_required_final_period_players(
         active_players, config.required_final_period_players
     )
-    starting_lineup = build_starting_lineup(active_players, requested_start_players, config.on_court_per_period)
+    never_on_first_period_players = filter_never_on_first_period_players(
+        active_players, config.never_on_first_period_players
+    )
+    starting_lineup = build_starting_lineup(
+        active_players,
+        requested_start_players,
+        config.on_court_per_period,
+        forbidden_start_players=never_on_first_period_players,
+    )
 
     if len(config.periods_per_half) != 2:
         raise ValueError("periods_per_half must contain exactly two entries, e.g. [6, 6] or [6, 5].")
@@ -467,23 +511,52 @@ def solve_team_lineup(  # noqa: PLR0917
     num_periods = sum(config.periods_per_half)
 
     model, is_on_court = build_model(num_players, num_periods)
+
+    # Mandatory constraint - alters feasibility of the model, so must be added first
     add_player_count_constraints(model, is_on_court, num_players, num_periods, config.on_court_per_period)
-    off_balance_penalties = add_playtime_balance_constraints(
-        model, is_on_court, num_players, num_periods, config.periods_per_half
-    )
-    add_no_consecutive_off_constraints(model, is_on_court, num_players, num_periods)
+
+    total_periods_played = add_total_playtime_constraints(model, is_on_court, num_players, num_periods)
+    add_pairwise_playtime_balance_constraints(model, num_players, num_periods, total_periods_played)
+
+    off_balance_penalties: list[Any] = []
+
+    if config.boolean_preferences["half_split_balance"]:
+        off_balance_penalties = add_half_split_balance_constraints(
+            model, is_on_court, num_players, num_periods, config.periods_per_half
+        )
+
+    if config.boolean_preferences["no_consecutive_off"]:
+        add_no_consecutive_off_constraints(model, is_on_court, num_players, num_periods)
+
+    # No config preference required - just don't add starting players if none are specified
     add_starting_lineup_constraints(model, is_on_court, active_players, starting_lineup)
-    add_final_period_constraints(
+
+    # No config preference required - just don't add final-period requirements if none are specified
+    add_final_period_mandatory_player_constraints(
         model,
         is_on_court,
         active_player_indices,
         num_periods,
         required_final_period_players,
     )
-    add_transition_constraints(model, is_on_court, num_players, num_periods, config.periods_per_half)
-    power_combo_period_flags = add_power_combo_objective(
-        model, is_on_court, active_power_combos, active_player_indices, num_periods
+
+    add_never_on_first_constraints(
+        model,
+        is_on_court,
+        active_player_indices,
+        never_on_first_period_players,
     )
+
+    if config.boolean_preferences["transition_constraints"]:
+        add_transition_constraints(model, is_on_court, num_players, num_periods, config.periods_per_half)
+
+    if config.boolean_preferences["power_combo_objective"]:
+        power_combo_period_flags = add_power_combo_objective(
+            model, is_on_court, active_power_combos, active_player_indices, num_periods
+        )
+    else:
+        power_combo_period_flags = []
+
     set_objective(model, off_balance_penalties, power_combo_period_flags)
 
     solver, status = solve_model(model)
@@ -519,7 +592,7 @@ def solve_team_lineup(  # noqa: PLR0917
                 id=str(uuid.uuid4()),
                 number=spin_number,
                 players=[Player(name=player_name) for player_name in opening_lineup],
-                created_at=datetime.utcnow().isoformat(),
+                created_at=datetime.now(UTC).isoformat(),
                 solution_snapshot=solution_snapshot,
                 config_snapshot={
                     "power_combos": active_power_combos,
@@ -547,7 +620,7 @@ def solve_team_lineup(  # noqa: PLR0917
                 id=str(uuid.uuid4()),
                 number=1,
                 players=[Player(name=player_name) for player_name in opening_lineup],
-                created_at=datetime.utcnow().isoformat(),
+                created_at=datetime.now(UTC).isoformat(),
                 solution_snapshot=solution_snapshot,
                 config_snapshot={
                     "power_combos": active_power_combos,

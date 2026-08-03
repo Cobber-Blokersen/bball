@@ -7,7 +7,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 
 from . import settings
-from .models import Game, LineupConfig, LineupSpin, Player, Team
+from .models import Game, LineupConfig, LineupSpin, Player, Team, build_default_boolean_preferences
 from .repositories import GameRepository, PlayerRepository, TeamRepository
 
 
@@ -108,9 +108,14 @@ class SQLiteTeamRepository(TeamRepository):
                 team=team,
                 power_combos=[list(combo) for combo in config_data.get("power_combos", [])],
                 required_final_period_players=list(config_data.get("required_final_period_players", [])),
+                never_on_first_period_players=list(config_data.get("never_on_first_period_players", [])),
                 periods_per_half=list(config_data.get("periods_per_half", [6, 6])),
                 on_court_per_period=config_data.get("on_court_per_period", 5),
                 minutes_per_half=config_data.get("minutes_per_half", 20),
+                boolean_preferences={
+                    **build_default_boolean_preferences(),
+                    **config_data.get("boolean_preferences", {}),
+                },
             )
         else:
             team.lineup_config = None
@@ -130,9 +135,14 @@ class SQLiteTeamRepository(TeamRepository):
                     team=team,
                     power_combos=[list(combo) for combo in config_data.get("power_combos", [])],
                     required_final_period_players=list(config_data.get("required_final_period_players", [])),
+                    never_on_first_period_players=list(config_data.get("never_on_first_period_players", [])),
                     periods_per_half=list(config_data.get("periods_per_half", [6, 6])),
                     on_court_per_period=config_data.get("on_court_per_period", 5),
                     minutes_per_half=config_data.get("minutes_per_half", 20),
+                    boolean_preferences={
+                        **build_default_boolean_preferences(),
+                        **config_data.get("boolean_preferences", {}),
+                    },
                 )
             else:
                 team.lineup_config = None
@@ -148,9 +158,11 @@ class SQLiteTeamRepository(TeamRepository):
                     {
                         "power_combos": config.power_combos,
                         "required_final_period_players": config.required_final_period_players,
+                        "never_on_first_period_players": config.never_on_first_period_players,
                         "periods_per_half": config.periods_per_half,
                         "on_court_per_period": config.on_court_per_period,
                         "minutes_per_half": config.minutes_per_half,
+                        "boolean_preferences": config.boolean_preferences,
                     }
                 )
             conn.execute(
@@ -162,6 +174,11 @@ class SQLiteTeamRepository(TeamRepository):
                     config_payload,
                 ),
             )
+            conn.commit()
+
+    def delete(self, team_id: str) -> None:
+        with self._connect() as conn:
+            conn.execute("DELETE FROM teams WHERE id = ?", (team_id,))
             conn.commit()
 
     def reset(self) -> None:
@@ -301,6 +318,16 @@ class SQLiteGameRepository(GameRepository):
                     game.selected_lineup_id,
                 ),
             )
+            conn.commit()
+
+    def delete(self, game_id: str) -> None:
+        with self._connect() as conn:
+            conn.execute("DELETE FROM games WHERE id = ?", (game_id,))
+            conn.commit()
+
+    def delete_by_team(self, team_id: str) -> None:
+        with self._connect() as conn:
+            conn.execute("DELETE FROM games WHERE team_id = ?", (team_id,))
             conn.commit()
 
     def reset(self) -> None:

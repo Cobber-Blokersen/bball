@@ -40,6 +40,9 @@ class InMemoryTeamRepository(TeamRepository):
     def save(self, team: Team) -> None:
         self._teams[team.id] = team
 
+    def delete(self, team_id: str) -> None:
+        self._teams.pop(team_id, None)
+
     def initialize(self) -> None:
         return None
 
@@ -65,6 +68,12 @@ class InMemoryGameRepository(GameRepository):
 
     def save(self, game: Game) -> None:
         self._games[game.id] = game
+
+    def delete(self, game_id: str) -> None:
+        self._games.pop(game_id, None)
+
+    def delete_by_team(self, team_id: str) -> None:
+        self._games = {game_id: game for game_id, game in self._games.items() if game.team_id != team_id}
 
     def initialize(self) -> None:
         return None
