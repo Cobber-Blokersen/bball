@@ -502,6 +502,7 @@ def solve_team_lineup(  # noqa: PLR0917
     config: LineupConfig | None = None,
     game_repo: GameRepository | None = None,
     game_date: str | None = None,
+    user_id: str = "",
 ) -> Game | None:
     """Solve a lineup for a team and persist a simple game-day lineup spin."""
     away_player_names = away_player_names or []
@@ -592,10 +593,11 @@ def solve_team_lineup(  # noqa: PLR0917
         opening_lineup.sort()
 
         if game_repo is not None and game_date:
-            game = game_repo.get_by_team_and_date(team.id, game_date)
+            game = game_repo.get_by_team_and_date(user_id, team.id, game_date)
             if game is None:
                 game = Game(
                     id=str(uuid.uuid4()),
+                    user_id=user_id,
                     team_id=team.id,
                     date=game_date,
                     lineup_spins=[],
@@ -658,6 +660,7 @@ def solve_team_lineup(  # noqa: PLR0917
             )
             game = Game(
                 id=str(uuid.uuid4()),
+                user_id=user_id,
                 team_id=team.id,
                 date=game_date or "",
                 lineup_spins=[spin],

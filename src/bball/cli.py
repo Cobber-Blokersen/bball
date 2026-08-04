@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 from datetime import UTC, datetime
 from typing import Annotated, Any
 
@@ -8,7 +9,7 @@ from rich.console import Console
 from rich.table import Table
 
 from . import settings
-from .models import LineupConfig, Player, Team, get_boolean_preference_definitions
+from .models import LineupConfig, Player, Team, User, get_boolean_preference_definitions
 from .solver import normalize_player_argument_values, solve_team_lineup
 
 PLAYER_CONSOLE_COLORS = [
@@ -21,6 +22,20 @@ PLAYER_CONSOLE_COLORS = [
     "bright_magenta",
     "orange1",
 ]
+
+# Global context to store the current user ID
+_current_user_id: str = ""
+
+
+def set_current_user_id(user_id: str) -> None:
+    """Set the current user ID for all subsequent operations."""
+    global _current_user_id
+    _current_user_id = user_id
+
+
+def get_current_user_id() -> str:
+    """Get the current user ID."""
+    return _current_user_id
 
 app = typer.Typer(help="Basketball lineup optimizer and manager", no_args_is_help=True)
 team_app = typer.Typer(help="Team-related commands", no_args_is_help=True)
@@ -40,6 +55,20 @@ rule_app.add_typer(never_on_first_app, name="never-on-first")
 app.add_typer(game_app, name="game")
 game_app.add_typer(spin_app, name="spin")
 app.add_typer(system_app, name="system")
+
+
+def handle_user_option(
+    user_id: Annotated[str | None, typer.Option("--user", help="User ID for the operation")] = None,
+) -> None:
+    """Callback to handle the global --user option."""
+    resolved_user_id = user_id or os.environ.get("BBALL_USER_ID")
+    if not resolved_user_id:
+        typer.echo("Error: User ID required. Provide --user flag or set BBALL_USER_ID environment variable.")
+        raise typer.Exit(code=1)
+    set_current_user_id(resolved_user_id)
+
+
+app.callback()(handle_user_option)
 
 
 def get_repository_classes() -> settings.RepositoryClasses:
@@ -79,8 +108,9 @@ def truncate_database() -> None:
 
 def load_team(team_name: str) -> Team:
     """Load a team by name from the configured repository backend."""
+    user_id = get_current_user_id()
     repo = get_repository_classes().team()
-    for team in repo.list():
+    for team in repo.list(user_id):
         if team.name == team_name:
             return team
     raise KeyError(f"Unknown team: {team_name}")
@@ -356,8 +386,9 @@ def add_team(
     """Create a new team with the provided players."""
     if len(player_names) == 1 and "," in player_names[0]:
         player_names = normalize_player_argument_values(player_names)
+    user_id = get_current_user_id()
     team_repo = get_repository_classes().team()
-    team = Team(name=team_name, players=[Player(name=player_name) for player_name in player_names])
+    team = Team(user_id=user_id, name=team_name, players=[Player(name=player_name) for player_name in player_names])
     team_repo.save(team)
     typer.echo(f"Created team {team.name}")
 
@@ -385,12 +416,13 @@ def remove_team(
 def list_teams(
     team_filter: Annotated[str | None, typer.Option("--team", help="Optional team name filter")] = None,
 ) -> None:
+    user_id = get_current_user_id()
     team_repo = get_repository_classes().team()
     console = Console()
     table = Table(show_header=True, header_style="bold cyan")
     table.add_column("Name")
     table.add_column("Players")
-    for team in team_repo.list():
+    for team in team_repo.list(user_id):
         if team_filter and team_filter not in team.name:
             continue
         table.add_row(team.name, ", ".join(player.name for player in team.players))
@@ -714,9 +746,10 @@ def remove_cleanup_player(
 def list_games(team_name: Annotated[str, typer.Argument(help="Team name")]) -> None:
     """List games recorded for a team."""
     team = load_team(team_name)
+    user_id = get_current_user_id()
     game_repo = get_repository_classes().game()
     console = Console()
-    for game in game_repo.list():
+    for game in game_repo.list(user_id):
         if game.team_id == team.id:
             console.print(game.date or "(no date)")
 
@@ -728,8 +761,9 @@ def list_spins(
 ) -> None:
     """List the recorded spins for a team/game."""
     team = load_team(team_name)
+    user_id = get_current_user_id()
     game_repo = get_repository_classes().game()
-    game = game_repo.get_by_team_and_date(team.id, game_name)
+    game = game_repo.get_by_team_and_date(user_id, team.id, game_name)
     if game is None:
         typer.echo("No spins found")
         raise typer.Exit()
@@ -773,8 +807,9 @@ def show_spin(
 ) -> None:
     """Show the full stored output for a specific spin."""
     team = load_team(team_name)
+    user_id = get_current_user_id()
     game_repo = get_repository_classes().game()
-    game = game_repo.get_by_team_and_date(team.id, game_name)
+    game = game_repo.get_by_team_and_date(user_id, team.id, game_name)
     if game is None:
         typer.echo("No such game")
         raise typer.Exit()
@@ -848,6 +883,7 @@ def run_spin(
         )
         raise typer.Exit(code=1)
 
+    user_id = get_current_user_id()
     game = solve_team_lineup(
         team,
         away_player_names=normalize_player_argument_values(away_players),
@@ -855,6 +891,7 @@ def run_spin(
         config=config,
         game_repo=get_repository_classes().game(),
         game_date=game_name,
+        user_id=user_id,
     )
     if game is None:
         typer.echo("No solution found.")
@@ -881,8 +918,9 @@ def prune_spins(
 ) -> None:
     """Delete all spins for a team/game after confirmation."""
     team = load_team(team_name)
+    user_id = get_current_user_id()
     game_repo = get_repository_classes().game()
-    game = game_repo.get_by_team_and_date(team.id, game_name)
+    game = game_repo.get_by_team_and_date(user_id, team.id, game_name)
     if game is None:
         typer.echo("No such game")
         raise typer.Exit()
@@ -909,8 +947,9 @@ def delete_spin(
 ) -> None:
     """Delete one or more spins for a team/game after confirmation."""
     team = load_team(team_name)
+    user_id = get_current_user_id()
     game_repo = get_repository_classes().game()
-    game = game_repo.get_by_team_and_date(team.id, game_name)
+    game = game_repo.get_by_team_and_date(user_id, team.id, game_name)
     if game is None:
         typer.echo("No such game")
         raise typer.Exit()

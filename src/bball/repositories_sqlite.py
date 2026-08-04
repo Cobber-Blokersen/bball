@@ -82,26 +82,31 @@ class SQLiteTeamRepository(TeamRepository):
         settings.ensure_db_dir()
         with self._connect() as conn:
             conn.execute(
-                "CREATE TABLE IF NOT EXISTS teams (id TEXT PRIMARY KEY, name TEXT NOT NULL, "
+                "CREATE TABLE IF NOT EXISTS teams (id TEXT PRIMARY KEY, user_id TEXT NOT NULL, name TEXT NOT NULL, "
                 "players_json TEXT NOT NULL, config_json TEXT)"
             )
+            # Add user_id column to existing tables for backward compatibility
+            cursor = conn.execute("PRAGMA table_info(teams)")
+            columns = {row[1] for row in cursor.fetchall()}
+            if "user_id" not in columns:
+                conn.execute("ALTER TABLE teams ADD COLUMN user_id TEXT DEFAULT ''")
             conn.commit()
 
     def _init_db(self) -> None:
         self.initialize()
 
-    def get(self, team_id: str) -> Team | None:
+    def get(self, user_id: str, team_id: str) -> Team | None:
         with self._connect() as conn:
             row = conn.execute(
-                "SELECT id, name, players_json, config_json FROM teams WHERE id = ?",
-                (team_id,),
+                "SELECT id, user_id, name, players_json, config_json FROM teams WHERE id = ? AND user_id = ?",
+                (team_id, user_id),
             ).fetchone()
         if not row:
             return None
-        _, name, players_json, config_json = row
+        team_id, returned_user_id, name, players_json, config_json = row
         players_data = json.loads(players_json)
         players = [Player(id=item["id"], name=item["name"]) for item in players_data]
-        team = Team(id=team_id, name=name, players=players)
+        team = Team(id=team_id, user_id=returned_user_id, name=name, players=players)
         if config_json:
             config_data = json.loads(config_json)
             team.lineup_config = LineupConfig(
@@ -121,14 +126,14 @@ class SQLiteTeamRepository(TeamRepository):
             team.lineup_config = None
         return team
 
-    def list(self) -> list[Team]:
+    def list(self, user_id: str) -> list[Team]:
         with self._connect() as conn:
-            rows = conn.execute("SELECT id, name, players_json, config_json FROM teams ORDER BY name").fetchall()
+            rows = conn.execute("SELECT id, user_id, name, players_json, config_json FROM teams WHERE user_id = ? ORDER BY name", (user_id,)).fetchall()
         teams: list[Team] = []
-        for team_id, name, players_json, config_json in rows:
+        for team_id, returned_user_id, name, players_json, config_json in rows:
             players_data = json.loads(players_json)
             players = [Player(id=item["id"], name=item["name"]) for item in players_data]
-            team = Team(id=team_id, name=name, players=players)
+            team = Team(id=team_id, user_id=returned_user_id, name=name, players=players)
             if config_json:
                 config_data = json.loads(config_json)
                 team.lineup_config = LineupConfig(
@@ -166,9 +171,10 @@ class SQLiteTeamRepository(TeamRepository):
                     }
                 )
             conn.execute(
-                "INSERT OR REPLACE INTO teams (id, name, players_json, config_json) VALUES (?, ?, ?, ?)",
+                "INSERT OR REPLACE INTO teams (id, user_id, name, players_json, config_json) VALUES (?, ?, ?, ?, ?)",
                 (
                     team.id,
+                    team.user_id,
                     team.name,
                     json.dumps([{"id": player.id, "name": player.name} for player in team.players]),
                     config_payload,
@@ -210,23 +216,28 @@ class SQLiteGameRepository(GameRepository):
         settings.ensure_db_dir()
         with self._connect() as conn:
             conn.execute(
-                "CREATE TABLE IF NOT EXISTS games (id TEXT PRIMARY KEY, team_id TEXT NOT NULL, date TEXT NOT NULL, "
+                "CREATE TABLE IF NOT EXISTS games (id TEXT PRIMARY KEY, user_id TEXT NOT NULL, team_id TEXT NOT NULL, date TEXT NOT NULL, "
                 "lineup_spins_json TEXT NOT NULL, selected_lineup_id TEXT)"
             )
+            # Add user_id column to existing tables for backward compatibility
+            cursor = conn.execute("PRAGMA table_info(games)")
+            columns = {row[1] for row in cursor.fetchall()}
+            if "user_id" not in columns:
+                conn.execute("ALTER TABLE games ADD COLUMN user_id TEXT DEFAULT ''")
             conn.commit()
 
     def _init_db(self) -> None:
         self.initialize()
 
-    def get(self, game_id: str) -> Game | None:
+    def get(self, user_id: str, game_id: str) -> Game | None:
         with self._connect() as conn:
             row = conn.execute(
-                "SELECT id, team_id, date, lineup_spins_json, selected_lineup_id FROM games WHERE id = ?",
-                (game_id,),
+                "SELECT id, user_id, team_id, date, lineup_spins_json, selected_lineup_id FROM games WHERE id = ? AND user_id = ?",
+                (game_id, user_id),
             ).fetchone()
         if not row:
             return None
-        game_id, team_id, date, lineup_spins_json, selected_lineup_id = row
+        game_id, returned_user_id, team_id, date, lineup_spins_json, selected_lineup_id = row
         spins_data = json.loads(lineup_spins_json)
         spins = [
             LineupSpin(
@@ -240,18 +251,18 @@ class SQLiteGameRepository(GameRepository):
             )
             for item in spins_data
         ]
-        return Game(id=game_id, team_id=team_id, date=date, lineup_spins=spins, selected_lineup_id=selected_lineup_id)
+        return Game(id=game_id, user_id=returned_user_id, team_id=team_id, date=date, lineup_spins=spins, selected_lineup_id=selected_lineup_id)
 
-    def get_by_team_and_date(self, team_id: str, date: str) -> Game | None:
+    def get_by_team_and_date(self, user_id: str, team_id: str, date: str) -> Game | None:
         with self._connect() as conn:
             row = conn.execute(
-                "SELECT id, team_id, date, lineup_spins_json, selected_lineup_id "
-                "FROM games WHERE team_id = ? AND date = ?",
-                (team_id, date),
+                "SELECT id, user_id, team_id, date, lineup_spins_json, selected_lineup_id "
+                "FROM games WHERE user_id = ? AND team_id = ? AND date = ?",
+                (user_id, team_id, date),
             ).fetchone()
         if not row:
             return None
-        game_id, team_id, date, lineup_spins_json, selected_lineup_id = row
+        game_id, returned_user_id, team_id, date, lineup_spins_json, selected_lineup_id = row
         spins_data = json.loads(lineup_spins_json)
         spins = [
             LineupSpin(
@@ -265,15 +276,16 @@ class SQLiteGameRepository(GameRepository):
             )
             for item in spins_data
         ]
-        return Game(id=game_id, team_id=team_id, date=date, lineup_spins=spins, selected_lineup_id=selected_lineup_id)
+        return Game(id=game_id, user_id=returned_user_id, team_id=team_id, date=date, lineup_spins=spins, selected_lineup_id=selected_lineup_id)
 
-    def list(self) -> list[Game]:
+    def list(self, user_id: str) -> list[Game]:
         with self._connect() as conn:
             rows = conn.execute(
-                "SELECT id, team_id, date, lineup_spins_json, selected_lineup_id FROM games ORDER BY date"
+                "SELECT id, user_id, team_id, date, lineup_spins_json, selected_lineup_id FROM games WHERE user_id = ? ORDER BY date",
+                (user_id,),
             ).fetchall()
         games: list[Game] = []
-        for game_id, team_id, date, lineup_spins_json, selected_lineup_id in rows:
+        for game_id, returned_user_id, team_id, date, lineup_spins_json, selected_lineup_id in rows:
             spins_data = json.loads(lineup_spins_json)
             spins = [
                 LineupSpin(
@@ -288,17 +300,18 @@ class SQLiteGameRepository(GameRepository):
                 for item in spins_data
             ]
             games.append(
-                Game(id=game_id, team_id=team_id, date=date, lineup_spins=spins, selected_lineup_id=selected_lineup_id)
+                Game(id=game_id, user_id=returned_user_id, team_id=team_id, date=date, lineup_spins=spins, selected_lineup_id=selected_lineup_id)
             )
         return games
 
     def save(self, game: Game) -> None:
         with self._connect() as conn:
             conn.execute(
-                "INSERT OR REPLACE INTO games (id, team_id, date, lineup_spins_json, selected_lineup_id) "
-                "VALUES (?, ?, ?, ?, ?)",
+                "INSERT OR REPLACE INTO games (id, user_id, team_id, date, lineup_spins_json, selected_lineup_id) "
+                "VALUES (?, ?, ?, ?, ?, ?)",
                 (
                     game.id,
+                    game.user_id,
                     game.team_id,
                     game.date,
                     json.dumps(

@@ -35,11 +35,11 @@ class PlayerRepository(ABC):
 
 class TeamRepository(ABC):
     @abstractmethod
-    def get(self, team_id: str) -> Team | None:
+    def get(self, user_id: str, team_id: str) -> Team | None:
         raise NotImplementedError
 
     @abstractmethod
-    def list(self) -> list[Team]:
+    def list(self, user_id: str) -> list[Team]:
         raise NotImplementedError
 
     @abstractmethod
@@ -65,15 +65,15 @@ class TeamRepository(ABC):
 
 class GameRepository(ABC):
     @abstractmethod
-    def get(self, game_id: str) -> Game | None:
+    def get(self, user_id: str, game_id: str) -> Game | None:
         raise NotImplementedError
 
     @abstractmethod
-    def get_by_team_and_date(self, team_id: str, date: str) -> Game | None:
+    def get_by_team_and_date(self, user_id: str, team_id: str, date: str) -> Game | None:
         raise NotImplementedError
 
     @abstractmethod
-    def list(self) -> list[Game]:
+    def list(self, user_id: str) -> list[Game]:
         raise NotImplementedError
 
     @abstractmethod

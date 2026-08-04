@@ -31,11 +31,14 @@ class InMemoryTeamRepository(TeamRepository):
     def __init__(self, teams: list[Team] | None = None) -> None:
         self._teams = {team.id: team for team in (teams or [])}
 
-    def get(self, team_id: str) -> Team | None:
-        return self._teams.get(team_id)
+    def get(self, user_id: str, team_id: str) -> Team | None:
+        team = self._teams.get(team_id)
+        if team and team.user_id == user_id:
+            return team
+        return None
 
-    def list(self) -> list[Team]:
-        return list(self._teams.values())
+    def list(self, user_id: str) -> list[Team]:
+        return [team for team in self._teams.values() if team.user_id == user_id]
 
     def save(self, team: Team) -> None:
         self._teams[team.id] = team
@@ -57,14 +60,20 @@ class InMemoryGameRepository(GameRepository):
     def __init__(self, games: list[Game] | None = None) -> None:
         self._games = {game.id: game for game in (games or [])}
 
-    def get(self, game_id: str) -> Game | None:
-        return self._games.get(game_id)
+    def get(self, user_id: str, game_id: str) -> Game | None:
+        game = self._games.get(game_id)
+        if game and game.user_id == user_id:
+            return game
+        return None
 
-    def get_by_team_and_date(self, team_id: str, date: str) -> Game | None:
-        return next((game for game in self._games.values() if game.team_id == team_id and game.date == date), None)
+    def get_by_team_and_date(self, user_id: str, team_id: str, date: str) -> Game | None:
+        return next(
+            (game for game in self._games.values() if game.user_id == user_id and game.team_id == team_id and game.date == date),
+            None,
+        )
 
-    def list(self) -> list[Game]:
-        return list(self._games.values())
+    def list(self, user_id: str) -> list[Game]:
+        return [game for game in self._games.values() if game.user_id == user_id]
 
     def save(self, game: Game) -> None:
         self._games[game.id] = game

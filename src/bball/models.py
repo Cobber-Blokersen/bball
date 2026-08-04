@@ -6,6 +6,14 @@ from typing import Any
 
 
 @dataclass(slots=True, frozen=True)
+class User:
+    id: str = field(default_factory=lambda: str(uuid.uuid4()))
+    email: str = ""
+    auth_type: str = ""
+    name: str = ""
+
+
+@dataclass(slots=True, frozen=True)
 class LineupPreferenceDefinition:
     key: str
     name: str
@@ -71,6 +79,7 @@ class Player:
 @dataclass(slots=True)
 class Team:
     id: str = field(default_factory=lambda: str(uuid.uuid4()))
+    user_id: str = ""
     name: str = ""
     players: list[Player] = field(default_factory=list)
     lineup_config: LineupConfig | None = None
@@ -106,6 +115,7 @@ class LineupSpin:
 @dataclass(slots=True)
 class Game:
     id: str = field(default_factory=lambda: str(uuid.uuid4()))
+    user_id: str = ""
     team_id: str = ""
     date: str = ""
     lineup_spins: list[LineupSpin] = field(default_factory=list)
