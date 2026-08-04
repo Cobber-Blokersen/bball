@@ -1,0 +1,120 @@
+{% extends "base.html" %}
+
+{% block title %}Games{% endblock %}
+
+{% block extra_css %}
+.page-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 2rem;
+}
+.page-header h2 { margin: 0; }
+
+.team-section { margin-bottom: 2.5rem; }
+.team-section-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 1rem;
+    padding-bottom: 0.5rem;
+    border-bottom: 2px solid #eef0fb;
+}
+.team-section-header h3 { margin: 0; color: #667eea; }
+
+/* New game inline form */
+.new-game-form {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+}
+.new-game-form input[type="date"] {
+    padding: 0.45rem 0.75rem;
+    border: 1px solid #ddd;
+    border-radius: 4px;
+    font-size: 0.9rem;
+    width: auto;
+    margin: 0;
+}
+.new-game-form button {
+    padding: 0.45rem 1rem;
+    font-size: 0.9rem;
+}
+
+/* Game rows */
+.game-list { list-style: none; }
+.game-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 0.6rem 0;
+    border-bottom: 1px solid #f0f0f0;
+    gap: 1rem;
+}
+.game-row:last-child { border-bottom: none; }
+.game-date { font-size: 1rem; font-weight: 600; color: #333; }
+.game-meta { font-size: 0.85rem; color: #888; }
+.spin-count-badge {
+    background: #eef0fb;
+    color: #667eea;
+    border-radius: 12px;
+    padding: 0.15rem 0.65rem;
+    font-size: 0.8rem;
+    font-weight: 600;
+}
+.empty-team { color: #bbb; font-style: italic; font-size: 0.9rem; padding: 0.5rem 0; }
+{% endblock %}
+
+{% block content %}
+<div class="card">
+    <div class="page-header">
+        <h2>Games</h2>
+    </div>
+
+    {% if not teams %}
+    <p style="color:#aaa;text-align:center;padding:3rem 0;">No teams yet. <a href="/teams">Create a team first.</a></p>
+    {% else %}
+    {% for team in teams %}
+    <div class="team-section">
+        <div class="team-section-header">
+            <h3>{{ team.name }}</h3>
+            <form class="new-game-form" method="post" action="/teams/{{ team.id }}/games/new">
+                <input type="date" name="date" required value="{{ today }}">
+                <button type="submit" class="button" style="white-space:nowrap;">+ New Game</button>
+            </form>
+        </div>
+
+        {% set team_games = games_by_team.get(team.id, []) %}
+        {% if team_games %}
+        <ul class="game-list">
+            {% for game in team_games %}
+            <li class="game-row">
+                <div>
+                    <span class="game-date">{{ game.date }}</span>
+                    <span class="spin-count-badge" style="margin-left:0.5rem;">{{ game.lineup_spins | length }} spin{{ 's' if game.lineup_spins | length != 1 else '' }}</span>
+                </div>
+                <div style="display:flex;gap:0.4rem;">
+                    <a href="/teams/{{ team.id }}/games/{{ game.date }}" class="button" style="padding:0.4rem 1rem;font-size:0.88rem;">View</a>
+                    <form method="post" action="/teams/{{ team.id }}/games/{{ game.date }}/delete"
+                          onsubmit="return confirm('Delete game {{ game.date }} and all its lineups?')">
+                        <button type="submit" class="button danger" style="padding:0.4rem 0.75rem;font-size:0.82rem;">Delete</button>
+                    </form>
+                </div>
+            </li>
+            {% endfor %}
+        </ul>
+        {% else %}
+        <p class="empty-team">No games yet for this team.</p>
+        {% endif %}
+    </div>
+    {% endfor %}
+    {% endif %}
+</div>
+
+<script>
+// Default date input to today
+document.querySelectorAll('input[type="date"]').forEach(el => {
+    if (!el.value) el.value = new Date().toISOString().split('T')[0];
+});
+</script>
+{% endblock %}

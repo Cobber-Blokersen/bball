@@ -1,0 +1,195 @@
+{% extends "base.html" %}
+
+{% block title %}{{ team.name }} — Team Detail{% endblock %}
+
+{% block extra_css %}
+.breadcrumb {
+    font-size: 0.9rem;
+    color: #888;
+    margin-bottom: 1.5rem;
+}
+.breadcrumb a { color: #667eea; text-decoration: none; }
+.breadcrumb a:hover { text-decoration: underline; }
+
+.team-title-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 2rem;
+    flex-wrap: wrap;
+    gap: 1rem;
+}
+.team-title-row h2 { margin: 0; }
+
+/* Two-column layout */
+.detail-layout {
+    display: grid;
+    grid-template-columns: 1fr 320px;
+    gap: 2rem;
+    align-items: start;
+}
+@media (max-width: 700px) {
+    .detail-layout { grid-template-columns: 1fr; }
+}
+
+/* Player list */
+.player-list { list-style: none; }
+.player-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 0.65rem 0;
+    border-bottom: 1px solid #f0f0f0;
+}
+.player-row:last-child { border-bottom: none; }
+.player-name {
+    font-size: 1rem;
+    color: #333;
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+}
+.player-avatar {
+    width: 32px;
+    height: 32px;
+    border-radius: 50%;
+    background: linear-gradient(135deg, #667eea, #764ba2);
+    color: white;
+    font-size: 0.8rem;
+    font-weight: 700;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+}
+.remove-btn {
+    background: none;
+    border: 1px solid #ddd;
+    color: #999;
+    padding: 0.3rem 0.7rem;
+    border-radius: 4px;
+    cursor: pointer;
+    font-size: 0.8rem;
+    transition: all 0.2s;
+}
+.remove-btn:hover { border-color: #dc3545; color: #dc3545; }
+
+/* Sidebar card */
+.sidebar-card {
+    background: #f8f9ff;
+    border: 1px solid #d0d7ff;
+    border-radius: 8px;
+    padding: 1.5rem;
+}
+.sidebar-card h3 { margin: 0 0 1rem; color: #667eea; }
+.sidebar-card input {
+    width: 100%;
+    max-width: none;
+    margin: 0 0 0.75rem;
+}
+.empty-players {
+    color: #aaa;
+    font-style: italic;
+    padding: 1.5rem 0;
+    text-align: center;
+}
+
+/* Danger zone */
+.danger-zone {
+    margin-top: 2rem;
+    border: 1px solid #f5c6cb;
+    border-radius: 8px;
+    padding: 1.25rem;
+    background: #fff8f8;
+}
+.danger-zone h4 { color: #c0392b; margin: 0 0 0.75rem; }
+.danger-zone p { font-size: 0.9rem; color: #888; margin-bottom: 1rem; }
+{% endblock %}
+
+{% block content %}
+<div class="card">
+    <div class="breadcrumb">
+        <a href="/teams">← All Teams</a>
+    </div>
+
+    <div class="team-title-row">
+        <h2>{{ team.name }}</h2>
+        <span style="color:#888;font-size:0.95rem;">{{ team.players | length }} player{{ 's' if team.players | length != 1 else '' }}</span>
+    </div>
+
+    <div class="detail-layout">
+        <!-- Player roster -->
+        <div>
+            <h3 style="margin-bottom:1rem;">Roster</h3>
+            {% if team.players %}
+            <ul class="player-list">
+                {% for player in team.players %}
+                <li class="player-row">
+                    <span class="player-name">
+                        <span class="player-avatar">{{ player.name[:2].upper() }}</span>
+                        {{ player.name }}
+                    </span>
+                    <form method="post" action="/teams/{{ team.id }}/players/{{ player.name | urlencode }}/remove"
+                          onsubmit="return confirm('Remove {{ player.name }} from the roster?')">
+                        <button type="submit" class="remove-btn">Remove</button>
+                    </form>
+                </li>
+                {% endfor %}
+            </ul>
+            {% else %}
+            <p class="empty-players">No players yet — add some from the panel on the right.</p>
+            {% endif %}
+        </div>
+
+        <!-- Sidebar -->
+        <div>
+            <div class="sidebar-card">
+                <h3>Add Player</h3>
+                <form method="post" action="/teams/{{ team.id }}/players/add">
+                    <input type="text" name="player_name" placeholder="Player name" required autofocus>
+                    <button type="submit" class="button" style="width:100%;text-align:center;">Add to Roster</button>
+                </form>
+            </div>
+
+            <div class="sidebar-card" style="margin-top:1rem;">
+                <h3>Lineup Preferences</h3>
+                <p style="font-size:0.85rem;color:#888;margin-bottom:0.75rem;">Power combos, solver rules, game setup.</p>
+                <a href="/teams/{{ team.id }}/preferences" class="button" style="width:100%;text-align:center;display:block;">Edit Preferences</a>
+            </div>
+
+            <div class="danger-zone">
+                <h4>Danger Zone</h4>
+                <p>Permanently delete this team and all its game data.</p>
+                <form method="post" action="/teams/{{ team.id }}/delete"
+                      onsubmit="return confirm('Delete {{ team.name }}? All game data will also be removed. This cannot be undone.')">
+                    <button type="submit" class="button danger" style="width:100%;text-align:center;">Delete Team</button>
+                </form>
+            </div>
+        </div>
+    </div>
+
+    <!-- Games section -->
+    <div style="margin-top:2.5rem;padding-top:1.5rem;border-top:2px solid #f0f0f0;">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:1rem;">
+            <h3 style="margin:0;color:#667eea;">Games</h3>
+            <a href="/games" style="font-size:0.85rem;color:#667eea;text-decoration:none;">View all →</a>
+        </div>
+        {% if games %}
+        <ul style="list-style:none;">
+            {% for game in games[:5] %}
+            <li style="display:flex;align-items:center;justify-content:space-between;padding:0.5rem 0;border-bottom:1px solid #f5f5f5;">
+                <span style="font-weight:600;">{{ game.date }}</span>
+                <span style="font-size:0.85rem;color:#aaa;">{{ game.lineup_spins | length }} spin{{ 's' if game.lineup_spins | length != 1 else '' }}</span>
+                <a href="/teams/{{ team.id }}/games/{{ game.date }}" class="button" style="padding:0.3rem 0.85rem;font-size:0.82rem;">Open</a>
+            </li>
+            {% endfor %}
+        </ul>
+        {% if games | length > 5 %}
+        <p style="font-size:0.85rem;color:#aaa;margin-top:0.5rem;">…and {{ games | length - 5 }} more. <a href="/games" style="color:#667eea;">See all games.</a></p>
+        {% endif %}
+        {% else %}
+        <p style="color:#bbb;font-style:italic;">No games yet. <a href="/games" style="color:#667eea;">Go to Games</a> to spin a lineup.</p>
+        {% endif %}
+    </div>
+</div>
+{% endblock %}

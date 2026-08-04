@@ -1,0 +1,345 @@
+{% extends "base.html" %}
+
+{% block title %}{{ team.name }} — Lineup Preferences{% endblock %}
+
+{% block extra_css %}
+.breadcrumb { font-size: 0.9rem; color: #888; margin-bottom: 1.5rem; }
+.breadcrumb a { color: #667eea; text-decoration: none; }
+.breadcrumb a:hover { text-decoration: underline; }
+.breadcrumb span { margin: 0 0.4rem; }
+
+.pref-page-title {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 2rem;
+    flex-wrap: wrap;
+    gap: 1rem;
+}
+.pref-page-title h2 { margin: 0; }
+
+/* Sections */
+.pref-section {
+    border: 1px solid #e8e8e8;
+    border-radius: 8px;
+    padding: 1.5rem;
+    margin-bottom: 1.5rem;
+}
+.pref-section-title {
+    font-size: 1rem;
+    font-weight: 700;
+    color: #333;
+    margin: 0 0 0.35rem;
+}
+.pref-section-desc {
+    font-size: 0.85rem;
+    color: #999;
+    margin: 0 0 1.25rem;
+}
+
+/* Game setup inputs */
+.setup-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
+    gap: 1rem;
+}
+.setup-field label { font-size: 0.82rem; font-weight: 600; color: #555; display: block; margin-bottom: 0.3rem; }
+.setup-field input[type="number"] {
+    width: 100%; max-width: none; margin: 0;
+    padding: 0.5rem 0.6rem;
+}
+
+/* Boolean preference toggles */
+.bool-pref-list { list-style: none; }
+.bool-pref-row {
+    display: flex;
+    align-items: flex-start;
+    gap: 0.85rem;
+    padding: 0.7rem 0;
+    border-bottom: 1px solid #f5f5f5;
+}
+.bool-pref-row:last-child { border-bottom: none; }
+.toggle-wrap { flex-shrink: 0; padding-top: 2px; }
+.toggle-wrap input[type="checkbox"] { width: 1.1rem; height: 1.1rem; cursor: pointer; accent-color: #667eea; }
+.bool-pref-label { font-weight: 600; font-size: 0.95rem; color: #333; cursor: pointer; }
+.bool-pref-detail { font-size: 0.82rem; color: #888; margin-top: 0.15rem; }
+.bool-save-row { margin-top: 1rem; }
+
+/* Player picker (power combos) */
+.player-checkboxes {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.5rem;
+    margin-bottom: 0.75rem;
+}
+.player-checkbox-label {
+    display: flex;
+    align-items: center;
+    gap: 0.35rem;
+    background: #f4f5ff;
+    border: 1px solid #d0d7ff;
+    border-radius: 20px;
+    padding: 0.3rem 0.75rem;
+    font-size: 0.85rem;
+    cursor: pointer;
+    transition: background 0.15s, border-color 0.15s;
+    user-select: none;
+}
+.player-checkbox-label:has(input:checked) {
+    background: #667eea;
+    border-color: #667eea;
+    color: white;
+}
+.player-checkbox-label input { display: none; }
+
+/* Combo chips */
+.combo-list { list-style: none; margin-bottom: 1rem; }
+.combo-item {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    background: #fff8f0;
+    border: 1px solid #ffe0b2;
+    border-radius: 6px;
+    padding: 0.5rem 0.75rem;
+    margin-bottom: 0.4rem;
+}
+.combo-players { font-size: 0.9rem; color: #b45309; font-weight: 600; }
+.combo-sep { color: #d97706; margin: 0 0.3rem; }
+
+/* Player badge list (must-finish / never-start) */
+.badge-list {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.4rem;
+    margin-bottom: 0.75rem;
+}
+.player-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.3rem;
+    background: #eef0fb;
+    border: 1px solid #d0d7ff;
+    border-radius: 20px;
+    padding: 0.25rem 0.5rem 0.25rem 0.75rem;
+    font-size: 0.85rem;
+    color: #444;
+}
+.player-badge form { display: inline; }
+.badge-remove {
+    background: none;
+    border: none;
+    cursor: pointer;
+    color: #aaa;
+    font-size: 0.75rem;
+    padding: 0 0.1rem;
+    line-height: 1;
+}
+.badge-remove:hover { color: #dc3545; }
+
+/* Player select dropdown */
+.player-select-row {
+    display: flex;
+    gap: 0.5rem;
+    align-items: center;
+    flex-wrap: wrap;
+}
+.player-select-row select {
+    width: auto;
+    margin: 0;
+    padding: 0.45rem 0.6rem;
+    font-size: 0.9rem;
+}
+.save-btn { padding: 0.5rem 1.25rem; font-size: 0.9rem; }
+{% endblock %}
+
+{% block content %}
+<div class="card">
+    <div class="breadcrumb">
+        <a href="/teams">All Teams</a><span>›</span>
+        <a href="/teams/{{ team.id }}">{{ team.name }}</a><span>›</span>
+        Lineup Preferences
+    </div>
+
+    <div class="pref-page-title">
+        <h2>Lineup Preferences</h2>
+        <a href="/teams/{{ team.id }}" class="button secondary" style="padding:0.5rem 1rem;font-size:0.9rem;">← Back to Team</a>
+    </div>
+
+    <!-- ── Game Setup ── -->
+    <div class="pref-section">
+        <p class="pref-section-title">Game Setup</p>
+        <p class="pref-section-desc">Court size and timing rules that feed every lineup spin.</p>
+        <form method="post" action="/teams/{{ team.id }}/preferences/setup">
+            <div class="setup-grid">
+                <div class="setup-field">
+                    <label for="on_court">Players on court</label>
+                    <input type="number" id="on_court" name="on_court_per_period" min="1" max="20"
+                           value="{{ config.on_court_per_period }}">
+                </div>
+                <div class="setup-field">
+                    <label for="p1st">Periods — 1st half</label>
+                    <input type="number" id="p1st" name="periods_first" min="1" max="20"
+                           value="{{ config.periods_per_half[0] }}">
+                </div>
+                <div class="setup-field">
+                    <label for="p2nd">Periods — 2nd half</label>
+                    <input type="number" id="p2nd" name="periods_second" min="1" max="20"
+                           value="{{ config.periods_per_half[1] }}">
+                </div>
+                <div class="setup-field">
+                    <label for="mins">Minutes per half</label>
+                    <input type="number" id="mins" name="minutes_per_half" min="1" max="60"
+                           value="{{ config.minutes_per_half }}">
+                </div>
+            </div>
+            <div style="margin-top:1rem;">
+                <button type="submit" class="button save-btn">Save Setup</button>
+            </div>
+        </form>
+    </div>
+
+    <!-- ── Boolean Preferences ── -->
+    <div class="pref-section">
+        <p class="pref-section-title">Solver Preferences</p>
+        <p class="pref-section-desc">Toggle the constraints and objectives the solver uses when generating lineups.</p>
+        <form method="post" action="/teams/{{ team.id }}/preferences/boolean">
+            <ul class="bool-pref-list">
+            {% for pdef in pref_defs %}
+            {% set enabled = config.boolean_preferences.get(pdef.key, pdef.default_enabled) %}
+            <li class="bool-pref-row">
+                <div class="toggle-wrap">
+                    <input type="checkbox" id="pref_{{ pdef.key }}" name="{{ pdef.key }}"
+                           {% if enabled %}checked{% endif %}>
+                </div>
+                <div>
+                    <label class="bool-pref-label" for="pref_{{ pdef.key }}">{{ pdef.name }}</label>
+                    <p class="bool-pref-detail">{{ pdef.detailed_description }}</p>
+                </div>
+            </li>
+            {% endfor %}
+            </ul>
+            <div class="bool-save-row">
+                <button type="submit" class="button save-btn">Save Preferences</button>
+            </div>
+        </form>
+    </div>
+
+    <!-- ── Power Combos ── -->
+    <div class="pref-section">
+        <p class="pref-section-title">Power Combos</p>
+        <p class="pref-section-desc">Player groupings the solver will try to keep on court together.
+        Requires the <em>Prefer power combos</em> preference to be enabled.</p>
+
+        {% if config.power_combos %}
+        <ul class="combo-list">
+            {% for combo in config.power_combos %}
+            <li class="combo-item">
+                <span class="combo-players">
+                    {% for name in combo %}{% if not loop.first %}<span class="combo-sep">+</span>{% endif %}{{ name }}{% endfor %}
+                </span>
+                <form method="post" action="/teams/{{ team.id }}/preferences/power-combos/{{ loop.index0 }}/remove">
+                    <button type="submit" class="remove-btn">Remove</button>
+                </form>
+            </li>
+            {% endfor %}
+        </ul>
+        {% endif %}
+
+        {% if team.players | length >= 2 %}
+        <form method="post" action="/teams/{{ team.id }}/preferences/power-combos/add">
+            <p style="font-size:0.82rem;font-weight:600;color:#555;margin-bottom:0.5rem;">Select two or more players:</p>
+            <div class="player-checkboxes">
+                {% for player in team.players %}
+                <label class="player-checkbox-label">
+                    <input type="checkbox" name="combo_players" value="{{ player.name }}">
+                    {{ player.name }}
+                </label>
+                {% endfor %}
+            </div>
+            <button type="submit" class="button save-btn">Add Combo</button>
+        </form>
+        {% else %}
+        <p style="color:#bbb;font-style:italic;font-size:0.9rem;">Add at least two players to the roster to configure power combos.</p>
+        {% endif %}
+    </div>
+
+    <!-- ── Must Finish ── -->
+    <div class="pref-section">
+        <p class="pref-section-title">Must Finish (Always On Last)</p>
+        <p class="pref-section-desc">At least one of these players will be on court in the final period.</p>
+
+        {% if config.required_final_period_players %}
+        <div class="badge-list">
+            {% for name in config.required_final_period_players %}
+            <span class="player-badge">
+                {{ name }}
+                <form method="post" action="/teams/{{ team.id }}/preferences/must-finish/{{ name | urlencode }}/remove">
+                    <button type="submit" class="badge-remove" title="Remove">✕</button>
+                </form>
+            </span>
+            {% endfor %}
+        </div>
+        {% endif %}
+
+        {% set available_must_finish = team.players | selectattr('name', 'defined') | list %}
+        {# filter out already-listed players #}
+        {% set already_must = config.required_final_period_players %}
+        {% if available_must_finish | selectattr('name', 'defined') | list | length > already_must | length %}
+        <form class="player-select-row" method="post" action="/teams/{{ team.id }}/preferences/must-finish/add">
+            <select name="player_name" required>
+                <option value="" disabled selected>Select player…</option>
+                {% for player in team.players %}
+                {% if player.name not in config.required_final_period_players %}
+                <option value="{{ player.name }}">{{ player.name }}</option>
+                {% endif %}
+                {% endfor %}
+            </select>
+            <button type="submit" class="button save-btn">Add</button>
+        </form>
+        {% elif not team.players %}
+        <p style="color:#bbb;font-style:italic;font-size:0.9rem;">Add players to the roster first.</p>
+        {% else %}
+        <p style="color:#aaa;font-size:0.9rem;">All players are already in this list.</p>
+        {% endif %}
+    </div>
+
+    <!-- ── Never Start ── -->
+    <div class="pref-section">
+        <p class="pref-section-title">Never Start (Never On First)</p>
+        <p class="pref-section-desc">These players will never be on court in the opening period.</p>
+
+        {% if config.never_on_first_period_players %}
+        <div class="badge-list">
+            {% for name in config.never_on_first_period_players %}
+            <span class="player-badge">
+                {{ name }}
+                <form method="post" action="/teams/{{ team.id }}/preferences/never-start/{{ name | urlencode }}/remove">
+                    <button type="submit" class="badge-remove" title="Remove">✕</button>
+                </form>
+            </span>
+            {% endfor %}
+        </div>
+        {% endif %}
+
+        {% set already_never = config.never_on_first_period_players %}
+        {% if team.players | length > already_never | length %}
+        <form class="player-select-row" method="post" action="/teams/{{ team.id }}/preferences/never-start/add">
+            <select name="player_name" required>
+                <option value="" disabled selected>Select player…</option>
+                {% for player in team.players %}
+                {% if player.name not in config.never_on_first_period_players %}
+                <option value="{{ player.name }}">{{ player.name }}</option>
+                {% endif %}
+                {% endfor %}
+            </select>
+            <button type="submit" class="button save-btn">Add</button>
+        </form>
+        {% elif not team.players %}
+        <p style="color:#bbb;font-style:italic;font-size:0.9rem;">Add players to the roster first.</p>
+        {% else %}
+        <p style="color:#aaa;font-size:0.9rem;">All players are already in this list.</p>
+        {% endif %}
+    </div>
+</div>
+{% endblock %}

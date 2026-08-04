@@ -1,0 +1,8 @@
+ortools
+rich
+typer
+fastapi
+uvicorn[standard]
+jinja2
+authlib
+pydantic

@@ -11,6 +11,7 @@ class User:
     email: str = ""
     auth_type: str = ""
     name: str = ""
+    role: str = "user"  # "user" or "admin"
 
 
 @dataclass(slots=True, frozen=True)

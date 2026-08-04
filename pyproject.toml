@@ -9,7 +9,13 @@ requires-python = ">=3.14"
 dependencies = [
   "ortools",
   "rich",
-  "typer"
+  "typer",
+  "fastapi",
+  "uvicorn[standard]",
+  "jinja2",
+  "authlib",
+  "pydantic",
+  "python-multipart",
 ]
 
 [project.optional-dependencies]

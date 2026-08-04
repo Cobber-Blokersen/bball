@@ -1,0 +1,40 @@
+{% extends "base.html" %}
+
+{% block title %}Home - Basketball Lineup Optimizer{% endblock %}
+
+{% block content %}
+<div class="card">
+    <h2>Welcome to Basketball Lineup Optimizer</h2>
+    <p>Manage your basketball teams and generate optimal lineups for your games.</p>
+    
+    <div style="margin-top: 2rem;">
+        {% if is_admin %}
+        <div class="grid">
+            <div class="grid-item">
+                <h3>Manage Users</h3>
+                <p>Add, remove, and manage user accounts. Assign admin or user roles.</p>
+                <a href="/admin/users" class="button">Go to User Management</a>
+            </div>
+        </div>
+        {% endif %}
+        
+        <div class="grid" style="margin-top: 2rem;">
+            <div class="grid-item">
+                <h3>Manage Teams</h3>
+                <p>Create and manage your basketball teams and player rosters.</p>
+                <a href="/teams" class="button">Go to Teams</a>
+            </div>
+            <div class="grid-item">
+                <h3>Manage Games</h3>
+                <p>Plan game days, spin optimised lineups and review past lineups.</p>
+                <a href="/games" class="button">Go to Games</a>
+            </div>
+            <div class="grid-item">
+                <h3>API Documentation</h3>
+                <p>View the full API documentation and test endpoints.</p>
+                <a href="/docs" class="button">View API Docs</a>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

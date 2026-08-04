@@ -1,0 +1,174 @@
+{% extends "base.html" %}
+
+{% block title %}My Teams{% endblock %}
+
+{% block extra_css %}
+.page-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 2rem;
+}
+.page-header h2 {
+    margin: 0;
+}
+
+/* New-team drawer */
+.new-team-toggle {
+    background: none;
+    border: 2px solid #667eea;
+    color: #667eea;
+    padding: 0.6rem 1.25rem;
+    border-radius: 4px;
+    cursor: pointer;
+    font-size: 1rem;
+    transition: all 0.2s;
+}
+.new-team-toggle:hover {
+    background: #667eea;
+    color: white;
+}
+.new-team-form {
+    background: #f8f9ff;
+    border: 1px solid #d0d7ff;
+    border-radius: 8px;
+    padding: 1.5rem;
+    margin-bottom: 2rem;
+    display: none;
+}
+.new-team-form.open { display: block; }
+.form-row {
+    display: flex;
+    gap: 1rem;
+    flex-wrap: wrap;
+    align-items: flex-end;
+    margin-top: 1rem;
+}
+.form-field { flex: 1; min-width: 180px; }
+.form-field label { font-size: 0.85rem; color: #555; font-weight: 600; }
+.form-field input { margin: 0.25rem 0 0; width: 100%; max-width: none; }
+
+/* Team grid */
+.team-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+    gap: 1.5rem;
+}
+.team-card {
+    background: white;
+    border-radius: 8px;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.08);
+    padding: 1.5rem;
+    display: flex;
+    flex-direction: column;
+    gap: 0.75rem;
+    transition: box-shadow 0.2s;
+}
+.team-card:hover { box-shadow: 0 4px 16px rgba(102,126,234,0.18); }
+.team-card h3 {
+    margin: 0;
+    font-size: 1.15rem;
+    color: #333;
+}
+.player-count {
+    font-size: 0.9rem;
+    color: #888;
+}
+.player-chips {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.4rem;
+}
+.player-chip {
+    background: #eef0fb;
+    color: #555;
+    border-radius: 12px;
+    padding: 0.2rem 0.7rem;
+    font-size: 0.8rem;
+}
+.card-actions {
+    display: flex;
+    gap: 0.5rem;
+    margin-top: auto;
+    padding-top: 0.75rem;
+    border-top: 1px solid #f0f0f0;
+}
+.card-actions a {
+    flex: 1;
+    text-align: center;
+    padding: 0.55rem 1rem;
+    font-size: 0.9rem;
+}
+.empty-state {
+    text-align: center;
+    padding: 4rem 2rem;
+    color: #888;
+}
+.empty-state p { font-size: 1.1rem; margin-bottom: 1rem; }
+{% endblock %}
+
+{% block content %}
+<div class="card">
+    <div class="page-header">
+        <h2>My Teams</h2>
+        <button class="new-team-toggle" onclick="toggleNewTeam()">+ New Team</button>
+    </div>
+
+    <div class="new-team-form" id="new-team-form">
+        <h3 style="margin:0 0 0.5rem;color:#667eea;">Create a new team</h3>
+        <form method="post" action="/teams/new">
+            <div class="form-row">
+                <div class="form-field">
+                    <label for="name">Team name</label>
+                    <input type="text" id="name" name="name" placeholder="e.g. Thunder U12" required autofocus>
+                </div>
+                <div class="form-field">
+                    <label for="player_names">Players <span style="font-weight:400;color:#aaa">(comma-separated, optional)</span></label>
+                    <input type="text" id="player_names" name="player_names" placeholder="Alice, Bob, Charlie">
+                </div>
+                <div style="align-self:flex-end; padding-bottom:0.1rem;">
+                    <button type="submit" class="button" style="white-space:nowrap;">Create Team</button>
+                </div>
+            </div>
+        </form>
+    </div>
+
+    {% if teams %}
+    <div class="team-grid">
+        {% for team in teams %}
+        <div class="team-card">
+            <h3>{{ team.name }}</h3>
+            <span class="player-count">{{ team.players | length }} player{{ 's' if team.players | length != 1 else '' }}</span>
+            {% if team.players %}
+            <div class="player-chips">
+                {% for player in team.players | sort(attribute='name') %}
+                <span class="player-chip">{{ player.name }}</span>
+                {% endfor %}
+            </div>
+            {% endif %}
+            <div class="card-actions">
+                <a href="/teams/{{ team.id }}" class="button">Manage</a>
+                <form method="post" action="/teams/{{ team.id }}/delete" onsubmit="return confirm('Delete {{ team.name }}? This cannot be undone.')">
+                    <button type="submit" class="button danger" style="padding:0.55rem 1rem;font-size:0.9rem;">Delete</button>
+                </form>
+            </div>
+        </div>
+        {% endfor %}
+    </div>
+    {% else %}
+    <div class="empty-state">
+        <p>No teams yet. Create your first one above!</p>
+    </div>
+    {% endif %}
+</div>
+
+<script>
+function toggleNewTeam() {
+    const form = document.getElementById('new-team-form');
+    form.classList.toggle('open');
+    if (form.classList.contains('open')) {
+        document.getElementById('name').focus();
+    }
+}
+</script>
+{% endblock %}

@@ -1,0 +1,240 @@
+{% extends "base.html" %}
+
+{% block title %}{{ team.name }} — {{ date }}{% endblock %}
+
+{% block extra_css %}
+.breadcrumb { font-size: 0.9rem; color: #888; margin-bottom: 1.5rem; }
+.breadcrumb a { color: #667eea; text-decoration: none; }
+.breadcrumb a:hover { text-decoration: underline; }
+.breadcrumb span { margin: 0 0.4rem; }
+
+.page-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 2rem;
+    flex-wrap: wrap;
+    gap: 1rem;
+}
+.page-header h2 { margin: 0; }
+
+/* Spin form */
+.spin-panel {
+    background: #f8f9ff;
+    border: 1px solid #d0d7ff;
+    border-radius: 8px;
+    padding: 1.25rem 1.5rem;
+    margin-bottom: 2rem;
+}
+.spin-panel h3 { margin: 0 0 1.1rem; color: #667eea; font-size: 1rem; }
+
+/* Pill picker */
+.picker-section { margin-bottom: 1.1rem; }
+.picker-header {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    margin-bottom: 0.2rem;
+}
+.picker-label { font-weight: 700; font-size: 0.92rem; color: #333; }
+.picker-count { font-size: 0.8rem; font-weight: 600; color: #667eea; }
+.picker-hint { font-size: 0.78rem; color: #aaa; margin-bottom: 0.45rem; }
+.picker-chips { display: flex; flex-wrap: wrap; gap: 0.35rem; }
+.p-chip {
+    display: inline-block;
+    padding: 0.3rem 0.85rem;
+    border-radius: 20px;
+    font-size: 0.85rem;
+    cursor: pointer;
+    border: 1.5px solid #d0d7ff;
+    background: #f4f5ff;
+    color: #555;
+    user-select: none;
+    transition: background 0.13s, border-color 0.13s, color 0.13s, opacity 0.13s;
+}
+.p-chip:hover { border-color: #667eea; color: #333; }
+.p-chip.sel-start { background: #28a745; border-color: #28a745; color: white; font-weight: 600; }
+.p-chip.sel-away  { background: #e07b2a; border-color: #e07b2a; color: white; font-weight: 600; }
+.p-chip.dimmed    { opacity: 0.28; cursor: default; pointer-events: none; }
+.spin-footer { margin-top: 1.1rem; display: flex; align-items: center; gap: 1rem; flex-wrap: wrap; }
+.spin-btn { padding: 0.55rem 1.5rem; font-size: 0.95rem; white-space: nowrap; }
+.solving-hint { font-size: 0.8rem; color: #aaa; }
+
+/* Spin list */
+.spins-header {
+    font-size: 0.85rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    color: #888;
+    margin-bottom: 0.75rem;
+}
+.spin-list { list-style: none; }
+.spin-item {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 0.75rem 1rem;
+    background: white;
+    border: 1px solid #e8e8e8;
+    border-radius: 6px;
+    margin-bottom: 0.5rem;
+    gap: 1rem;
+    transition: border-color 0.2s;
+}
+.spin-item:hover { border-color: #667eea; }
+.spin-meta { font-size: 0.85rem; color: #888; }
+.spin-num { font-weight: 700; color: #333; margin-right: 0.5rem; }
+.spin-starters { font-size: 0.9rem; color: #555; }
+.spin-away { font-size: 0.8rem; color: #e07b2a; }
+
+.no-solution-alert {
+    background: #fff3cd;
+    border: 1px solid #ffc107;
+    color: #856404;
+    padding: 0.75rem 1rem;
+    border-radius: 6px;
+    margin-bottom: 1rem;
+}
+{% endblock %}
+
+{% block content %}
+<div class="card">
+    <div class="breadcrumb">
+        <a href="/games">Games</a>
+        <span>›</span>
+        <a href="/teams/{{ team.id }}">{{ team.name }}</a>
+        <span>›</span>
+        {{ date }}
+    </div>
+
+    <div class="page-header">
+        <h2>{{ team.name }} <span style="color:#aaa;font-weight:400;">·</span> {{ date }}</h2>
+        <span style="color:#888;font-size:0.95rem;">{{ spins | length }} spin{{ 's' if spins | length != 1 else '' }}</span>
+    </div>
+
+    {% if request_query_no_solution %}
+    <div class="no-solution-alert">No solution found — the solver could not satisfy the constraints. Try removing away players or adjusting preferences.</div>
+    {% endif %}
+
+    <div class="spin-panel">
+        <h3>🎰 Spin a New Lineup</h3>
+        <form id="spin-form" method="post" action="/teams/{{ team.id }}/games/{{ date }}/spin"
+              onsubmit="prepareFormData(); this.querySelector('.spin-btn').disabled=true; this.querySelector('.spin-btn').textContent='Solving…'">
+
+            <input type="hidden" id="start_players_input" name="start_players" value="">
+            <input type="hidden" id="away_players_input" name="away_players" value="">
+
+            <!-- Starting lineup -->
+            <div class="picker-section">
+                <div class="picker-header">
+                    <span class="picker-label">Starting Lineup</span>
+                    <span class="picker-count" id="start-count">0 / {{ on_court_per_period }}</span>
+                </div>
+                <p class="picker-hint">Select up to {{ on_court_per_period }} starters. Leave empty to let the solver decide.</p>
+                <div class="picker-chips" id="start-chips">
+                    {% for player in team.players %}
+                    <span class="p-chip" data-name="{{ player.name }}" onclick="toggleChip(this,'start')">{{ player.name }}</span>
+                    {% endfor %}
+                </div>
+            </div>
+
+            <!-- Away players -->
+            <div class="picker-section">
+                <div class="picker-header">
+                    <span class="picker-label">Away Players</span>
+                    <span class="picker-count" id="away-count"></span>
+                </div>
+                <p class="picker-hint">Players who won't be at this game. They are excluded from the roster entirely.</p>
+                <div class="picker-chips" id="away-chips">
+                    {% for player in team.players %}
+                    <span class="p-chip" data-name="{{ player.name }}" onclick="toggleChip(this,'away')">{{ player.name }}</span>
+                    {% endfor %}
+                </div>
+            </div>
+
+            <div class="spin-footer">
+                <button type="submit" class="button spin-btn">Spin Lineup</button>
+                <span class="solving-hint">The solver typically takes a few seconds.</span>
+            </div>
+        </form>
+    </div>
+
+    <script>
+    const MAX_STARTERS = {{ on_court_per_period }};
+    const starters = new Set({{ last_start_names | tojson | safe }});
+    const away    = new Set({{ last_away_names  | tojson | safe }});
+
+    function toggleChip(chip, group) {
+        const name = chip.dataset.name;
+        if (group === 'start') {
+            if (starters.has(name)) { starters.delete(name); }
+            else if (!away.has(name) && starters.size < MAX_STARTERS) { starters.add(name); }
+        } else {
+            if (away.has(name)) { away.delete(name); }
+            else if (!starters.has(name)) { away.add(name); }
+        }
+        render();
+    }
+
+    function render() {
+        const startFull = starters.size >= MAX_STARTERS;
+        document.querySelectorAll('#start-chips .p-chip').forEach(c => {
+            const n = c.dataset.name;
+            c.className = 'p-chip' +
+                (starters.has(n) ? ' sel-start' : away.has(n) ? ' dimmed' : startFull ? ' dimmed' : '');
+        });
+        document.querySelectorAll('#away-chips .p-chip').forEach(c => {
+            const n = c.dataset.name;
+            c.className = 'p-chip' +
+                (away.has(n) ? ' sel-away' : starters.has(n) ? ' dimmed' : '');
+        });
+        document.getElementById('start-count').textContent = `${starters.size} / ${MAX_STARTERS}`;
+        const ac = document.getElementById('away-count');
+        ac.textContent = away.size > 0 ? `${away.size} away` : '';
+    }
+
+    function prepareFormData() {
+        document.getElementById('start_players_input').value = [...starters].join(',');
+        document.getElementById('away_players_input').value  = [...away].join(',');
+    }
+
+    render();
+    </script>
+
+    {% if spins %}
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:0.75rem;">
+        <p class="spins-header" style="margin:0;">Saved lineups</p>
+        <form method="post" action="/teams/{{ team.id }}/games/{{ date }}/spins/delete-all"
+              onsubmit="return confirm('Delete all {{ spins | length }} lineup{{ 's' if spins | length != 1 else '' }} for {{ date }}? This cannot be undone.')">
+            <button type="submit" class="button danger" style="padding:0.35rem 0.9rem;font-size:0.82rem;">Delete All</button>
+        </form>
+    </div>
+    <ul class="spin-list">
+        {% for spin in spins | sort(attribute='number', reverse=True) %}
+        <li class="spin-item">
+            <div>
+                <span class="spin-num">#{{ spin.number }}</span>
+                {% if spin.players %}
+                <span class="spin-starters">Starting: {{ spin.players | map(attribute='name') | join(', ') }}</span>
+                {% endif %}
+                {% if spin.away_players %}
+                <span class="spin-away"> · Away: {{ spin.away_players | join(', ') }}</span>
+                {% endif %}
+                <div class="spin-meta">{{ spin.created_at or 'Unknown time' }}</div>
+            </div>
+            <div style="display:flex;gap:0.4rem;align-items:center;flex-shrink:0;">
+                <a href="/teams/{{ team.id }}/games/{{ date }}/spins/{{ spin.number }}" class="button" style="padding:0.4rem 1rem;font-size:0.88rem;">View</a>
+                <form method="post" action="/teams/{{ team.id }}/games/{{ date }}/spins/{{ spin.number }}/delete"
+                      onsubmit="return confirm('Delete lineup #{{ spin.number }}?')">
+                    <button type="submit" class="button danger" style="padding:0.4rem 0.75rem;font-size:0.82rem;">Delete</button>
+                </form>
+            </div>
+        </li>
+        {% endfor %}
+    </ul>
+    {% else %}
+    <p style="color:#bbb;font-style:italic;text-align:center;padding:2rem 0;">No lineups yet — spin one above.</p>
+    {% endif %}
+</div>
+{% endblock %}

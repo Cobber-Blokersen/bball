@@ -1,0 +1,425 @@
+{% extends "base.html" %}
+
+{% block title %}{{ team.name }} · {{ date }} · Spin #{{ spin_number }}{% endblock %}
+
+{% block extra_css %}
+.breadcrumb { font-size: 0.9rem; color: #888; margin-bottom: 1.5rem; }
+.breadcrumb a { color: #667eea; text-decoration: none; }
+.breadcrumb a:hover { text-decoration: underline; }
+.breadcrumb span { margin: 0 0.4rem; }
+
+.spin-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 1.5rem;
+    flex-wrap: wrap;
+    gap: 0.75rem;
+}
+.spin-header h2 { margin: 0; }
+.status-badge {
+    padding: 0.3rem 0.85rem;
+    border-radius: 12px;
+    font-size: 0.85rem;
+    font-weight: 700;
+}
+.status-OPTIMAL { background: #d4edda; color: #155724; }
+.status-FEASIBLE { background: #fff3cd; color: #856404; }
+.status-other { background: #f8d7da; color: #721c24; }
+
+/* Highlight controls */
+.hl-bar {
+    background: #f8f9fa;
+    border: 1px solid #e0e0e0;
+    border-radius: 8px;
+    padding: 0.75rem 1rem;
+    margin-bottom: 1.5rem;
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 0.5rem;
+}
+.hl-bar-label { font-size: 0.85rem; font-weight: 600; color: #666; margin-right: 0.25rem; }
+.hl-pill {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.3rem;
+    padding: 0.2rem 0.65rem;
+    border-radius: 12px;
+    font-size: 0.8rem;
+    font-weight: 600;
+    cursor: pointer;
+    border: none;
+    background: #e8e8e8;
+    color: #333;
+    transition: opacity 0.15s;
+}
+.hl-pill:hover { opacity: 0.75; }
+.hl-pill .hl-x { font-size: 0.7rem; margin-left: 0.15rem; }
+#hl-clear-btn {
+    font-size: 0.8rem;
+    color: #999;
+    background: none;
+    border: 1px solid #ddd;
+    border-radius: 4px;
+    padding: 0.2rem 0.6rem;
+    cursor: pointer;
+    margin-left: auto;
+}
+#hl-clear-btn:hover { color: #dc3545; border-color: #dc3545; }
+.hl-hint { font-size: 0.8rem; color: #aaa; margin-left: 0.5rem; }
+
+/* Lineup section headers */
+.section-label {
+    font-size: 0.8rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    color: #888;
+    margin: 1.5rem 0 0.5rem;
+}
+
+/* Period table */
+.period-table {
+    width: 100%;
+    border-collapse: collapse;
+    margin-bottom: 1rem;
+    font-size: 0.92rem;
+}
+.period-table th {
+    background: #f0f2ff;
+    color: #555;
+    padding: 0.5rem 0.75rem;
+    text-align: left;
+    font-size: 0.8rem;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+}
+.period-table td {
+    padding: 0.55rem 0.75rem;
+    border-bottom: 1px solid #f0f0f0;
+    vertical-align: top;
+}
+.period-table tr:last-child td { border-bottom: none; }
+.period-num { color: #aaa; font-weight: 700; width: 48px; }
+.period-time { color: #888; width: 60px; font-variant-numeric: tabular-nums; }
+.players-cell { line-height: 1.7; }
+.off-cell { color: #bbb; line-height: 1.7; }
+
+/* Clickable player spans */
+.player {
+    display: inline-block;
+    cursor: pointer;
+    border-radius: 3px;
+    padding: 1px 3px;
+    transition: background-color 0.15s;
+    user-select: none;
+}
+.player:hover { outline: 2px solid #667eea44; }
+.player-sep { color: #ccc; }
+
+/* Two-column layout for stats+config */
+.bottom-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 2rem;
+    margin-top: 2rem;
+}
+@media (max-width: 680px) { .bottom-grid { grid-template-columns: 1fr; } }
+
+/* Summary table */
+.summary-table { width: 100%; border-collapse: collapse; font-size: 0.9rem; }
+.summary-table th { background: #f8f9fa; padding: 0.4rem 0.6rem; font-size: 0.78rem; text-transform: uppercase; letter-spacing: 0.04em; color: #888; }
+.summary-table td { padding: 0.45rem 0.6rem; border-bottom: 1px solid #f0f0f0; }
+.summary-table tr:last-child td { border-bottom: none; }
+.on-bar { display: inline-block; height: 8px; background: #667eea; border-radius: 4px; vertical-align: middle; min-width: 4px; }
+
+/* Co-play table */
+.coplay-table { width: 100%; border-collapse: collapse; font-size: 0.88rem; }
+.coplay-table th { background: #f8f9fa; padding: 0.4rem 0.6rem; font-size: 0.78rem; text-transform: uppercase; letter-spacing: 0.04em; color: #888; }
+.coplay-table td { padding: 0.4rem 0.6rem; border-bottom: 1px solid #f0f0f0; }
+.coplay-table tr:last-child td { border-bottom: none; }
+.coplay-pair .player { font-size: 0.88rem; }
+
+/* Config sidebar */
+.config-panel { font-size: 0.88rem; }
+.config-section { margin-bottom: 1rem; }
+.config-section-label { font-size: 0.75rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.05em; color: #aaa; margin-bottom: 0.4rem; }
+.pref-row { display: flex; align-items: center; gap: 0.5rem; padding: 0.25rem 0; }
+.pref-dot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; }
+.pref-on { background: #28a745; }
+.pref-off { background: #dee2e6; }
+.pref-name { color: #555; }
+.combo-chip {
+    display: inline-block;
+    background: #fff3e0;
+    color: #e07b2a;
+    border-radius: 4px;
+    padding: 0.15rem 0.5rem;
+    font-size: 0.82rem;
+    margin: 0.15rem 0.15rem 0.15rem 0;
+}
+
+/* Spin nav */
+.spin-nav {
+    display: flex;
+    gap: 0.5rem;
+    align-items: center;
+    flex-wrap: wrap;
+}
+.spin-nav-label { font-size: 0.85rem; color: #888; }
+{% endblock %}
+
+{% block content %}
+<div class="card">
+    <div class="breadcrumb">
+        <a href="/games">Games</a><span>›</span>
+        <a href="/teams/{{ team.id }}/games/{{ date }}">{{ team.name }} · {{ date }}</a><span>›</span>
+        Spin #{{ spin_number }}
+    </div>
+
+    <div class="spin-header">
+        <div style="display:flex;align-items:center;gap:1rem;flex-wrap:wrap;">
+            <h2>Spin #{{ spin_number }}</h2>
+            {% if display.solved %}
+            <span class="status-badge status-{{ display.status }}">{{ display.status }}</span>
+            {% else %}
+            <span class="status-badge status-other">{{ display.status }}</span>
+            {% endif %}
+        </div>
+        <div class="spin-nav">
+            <span class="spin-nav-label">{{ spin_number }} of {{ total_spins }}</span>
+            {% if spin_number > 1 %}
+            <a href="/teams/{{ team.id }}/games/{{ date }}/spins/{{ spin_number - 1 }}" class="button secondary" style="padding:0.4rem 0.85rem;font-size:0.85rem;">‹ Prev</a>
+            {% endif %}
+            {% if spin_number < total_spins %}
+            <a href="/teams/{{ team.id }}/games/{{ date }}/spins/{{ spin_number + 1 }}" class="button secondary" style="padding:0.4rem 0.85rem;font-size:0.85rem;">Next ›</a>
+            {% endif %}
+            <a href="/teams/{{ team.id }}/games/{{ date }}" class="button secondary" style="padding:0.4rem 0.85rem;font-size:0.85rem;">All Spins</a>
+            <form method="post" action="/teams/{{ team.id }}/games/{{ date }}/spins/{{ spin_number }}/delete"
+                  onsubmit="return confirm('Delete Spin #{{ spin_number }}?')" style="display:inline;">
+                <button type="submit" class="button danger" style="padding:0.4rem 0.85rem;font-size:0.85rem;">Delete</button>
+            </form>
+        </div>
+    </div>
+
+    {% if display.solved %}
+
+    <!-- Highlight control bar -->
+    <div class="hl-bar" id="hl-bar">
+        <span class="hl-bar-label">Highlight:</span>
+        <span id="hl-pills"></span>
+        <span class="hl-hint" id="hl-hint">Click any player name in the table to highlight them.</span>
+        <button id="hl-clear-btn" onclick="clearHighlights()" style="display:none;">Clear all</button>
+    </div>
+
+    <!-- First half -->
+    <p class="section-label">First Half</p>
+    <table class="period-table">
+        <thead><tr>
+            <th style="width:48px">#</th>
+            <th style="width:60px">Time</th>
+            <th>On Court</th>
+            <th style="color:#bbb">Off Court</th>
+        </tr></thead>
+        <tbody>
+        {% for row in display.first_half %}
+        <tr>
+            <td class="period-num">{{ row.period }}</td>
+            <td class="period-time">{{ row.time }}</td>
+            <td class="players-cell">{% for name in row.on %}{% if not loop.first %}<span class="player-sep">, </span>{% endif %}<span class="player" data-name="{{ name }}" onclick="toggleHighlight('{{ name }}')">{{ name }}</span>{% endfor %}</td>
+            <td class="off-cell">{% for name in row.off %}{% if not loop.first %}<span class="player-sep">, </span>{% endif %}<span class="player" data-name="{{ name }}" onclick="toggleHighlight('{{ name }}')">{{ name }}</span>{% endfor %}</td>
+        </tr>
+        {% endfor %}
+        </tbody>
+    </table>
+
+    <!-- Second half -->
+    <p class="section-label">Second Half</p>
+    <table class="period-table">
+        <thead><tr>
+            <th style="width:48px">#</th>
+            <th style="width:60px">Time</th>
+            <th>On Court</th>
+            <th style="color:#bbb">Off Court</th>
+        </tr></thead>
+        <tbody>
+        {% for row in display.second_half %}
+        <tr>
+            <td class="period-num">{{ row.period }}</td>
+            <td class="period-time">{{ row.time }}</td>
+            <td class="players-cell">{% for name in row.on %}{% if not loop.first %}<span class="player-sep">, </span>{% endif %}<span class="player" data-name="{{ name }}" onclick="toggleHighlight('{{ name }}')">{{ name }}</span>{% endfor %}</td>
+            <td class="off-cell">{% for name in row.off %}{% if not loop.first %}<span class="player-sep">, </span>{% endif %}<span class="player" data-name="{{ name }}" onclick="toggleHighlight('{{ name }}')">{{ name }}</span>{% endfor %}</td>
+        </tr>
+        {% endfor %}
+        </tbody>
+    </table>
+
+    <!-- Stats + Config -->
+    <div class="bottom-grid">
+        <!-- Left: summary + co-play -->
+        <div>
+            <p class="section-label" style="margin-top:0;">Player Summary</p>
+            <table class="summary-table">
+                <thead><tr><th>Player</th><th>On</th><th>Off</th><th></th></tr></thead>
+                <tbody>
+                {% set max_on = display.summary | map(attribute='on_count') | max %}
+                {% for row in display.summary %}
+                <tr>
+                    <td><span class="player" data-name="{{ row.player }}" onclick="toggleHighlight('{{ row.player }}')">{{ row.player }}</span></td>
+                    <td>{{ row.on_count }}</td>
+                    <td style="color:#bbb">{{ row.off_count }}</td>
+                    <td><span class="on-bar" style="width:{{ (row.on_count / max_on * 80) | int }}px"></span></td>
+                </tr>
+                {% endfor %}
+                </tbody>
+            </table>
+
+            {% if display.co_play %}
+            <p class="section-label" style="margin-top:1.5rem;">Player Pair Stats</p>
+            <table class="coplay-table">
+                <thead><tr><th>Pair</th><th>Periods Together</th></tr></thead>
+                <tbody>
+                {% for row in display.co_play %}
+                <tr>
+                    <td class="coplay-pair">
+                        <span class="player" data-name="{{ row.players[0] }}" onclick="toggleHighlight('{{ row.players[0] }}')">{{ row.players[0] }}</span>
+                        <span style="color:#ccc"> / </span>
+                        <span class="player" data-name="{{ row.players[1] }}" onclick="toggleHighlight('{{ row.players[1] }}')">{{ row.players[1] }}</span>
+                    </td>
+                    <td>{{ row.count }}</td>
+                </tr>
+                {% endfor %}
+                </tbody>
+            </table>
+            {% endif %}
+        </div>
+
+        <!-- Right: config snapshot -->
+        <div class="config-panel">
+            <p class="section-label" style="margin-top:0;">Lineup Config Used</p>
+            {% set cfg = display.config %}
+
+            <div class="config-section">
+                <div class="config-section-label">Setup</div>
+                <div>{{ cfg.get('on_court_per_period', 5) }} on court · {{ cfg.get('periods_per_half', [6,6])[0] }}+{{ cfg.get('periods_per_half', [6,6])[1] }} periods · {{ cfg.get('minutes_per_half', 20) }} min/half</div>
+            </div>
+            <div style="margin-top:1rem;">
+                <a href="/teams/{{ team.id }}/preferences" style="font-size:0.82rem;color:#667eea;text-decoration:none;">Edit preferences →</a>
+            </div>
+
+            {% if display.prefs %}
+            <div class="config-section">
+                <div class="config-section-label">Preferences</div>
+                {% for pref in display.prefs %}
+                <div class="pref-row">
+                    <span class="pref-dot {{ 'pref-on' if pref.enabled else 'pref-off' }}"></span>
+                    <span class="pref-name">{{ pref.name }}</span>
+                </div>
+                {% endfor %}
+            </div>
+            {% endif %}
+
+            {% if cfg.get('power_combos') %}
+            <div class="config-section">
+                <div class="config-section-label">Power Combos</div>
+                {% for combo in cfg.power_combos %}
+                <span class="combo-chip">{{ combo | join(' + ') }}</span>
+                {% endfor %}
+            </div>
+            {% endif %}
+
+            {% if cfg.get('required_final_period_players') %}
+            <div class="config-section">
+                <div class="config-section-label">Must Finish</div>
+                {% for name in cfg.required_final_period_players %}
+                <span class="player" data-name="{{ name }}" onclick="toggleHighlight('{{ name }}')">{{ name }}</span>{% if not loop.last %}, {% endif %}
+                {% endfor %}
+            </div>
+            {% endif %}
+
+            {% if cfg.get('never_on_first_period_players') %}
+            <div class="config-section">
+                <div class="config-section-label">Never Start</div>
+                {% for name in cfg.never_on_first_period_players %}
+                <span class="player" data-name="{{ name }}" onclick="toggleHighlight('{{ name }}')">{{ name }}</span>{% if not loop.last %}, {% endif %}
+                {% endfor %}
+            </div>
+            {% endif %}
+
+            {% if spin.away_players %}
+            <div class="config-section">
+                <div class="config-section-label">Away Players</div>
+                {{ spin.away_players | join(', ') }}
+            </div>
+            {% endif %}
+        </div>
+    </div>
+
+    {% else %}
+    <p style="color:#dc3545;padding:2rem 0;text-align:center;">No solution found ({{ display.status }}).</p>
+    {% endif %}
+</div>
+
+<script>
+const COLORS = [
+    '#ffe066','#a8f0a8','#a8d8ff','#ffc0cb',
+    '#ffcca8','#d0a8ff','#a8fff0','#ffa8a8'
+];
+const highlights = new Map(); // name -> colorIndex
+
+function toggleHighlight(name) {
+    if (highlights.has(name)) {
+        highlights.delete(name);
+    } else {
+        const used = new Set(highlights.values());
+        const idx = COLORS.findIndex((_, i) => !used.has(i));
+        highlights.set(name, idx >= 0 ? idx : 0);
+    }
+    applyHighlights();
+}
+
+function applyHighlights() {
+    document.querySelectorAll('.player').forEach(el => {
+        const name = el.dataset.name;
+        if (highlights.has(name)) {
+            el.style.backgroundColor = COLORS[highlights.get(name)];
+            el.style.padding = '1px 5px';
+            el.style.fontWeight = '700';
+        } else {
+            el.style.backgroundColor = '';
+            el.style.padding = '';
+            el.style.fontWeight = '';
+        }
+    });
+    renderPills();
+    const clearBtn = document.getElementById('hl-clear-btn');
+    const hint = document.getElementById('hl-hint');
+    if (highlights.size > 0) {
+        clearBtn.style.display = 'inline-block';
+        hint.style.display = 'none';
+    } else {
+        clearBtn.style.display = 'none';
+        hint.style.display = 'inline';
+    }
+}
+
+function renderPills() {
+    const container = document.getElementById('hl-pills');
+    container.innerHTML = '';
+    highlights.forEach((colorIdx, name) => {
+        const pill = document.createElement('button');
+        pill.className = 'hl-pill';
+        pill.style.background = COLORS[colorIdx];
+        pill.innerHTML = name + '<span class="hl-x">✕</span>';
+        pill.onclick = () => toggleHighlight(name);
+        container.appendChild(pill);
+    });
+}
+
+function clearHighlights() {
+    highlights.clear();
+    applyHighlights();
+}
+</script>
+{% endblock %}

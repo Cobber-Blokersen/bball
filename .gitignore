@@ -3,6 +3,9 @@ __pycache__/
 *.py[cod]
 *$py.class
 
+# Team data
+data/
+
 # C extensions
 *.so
 
@@ -50,5 +53,4 @@ htmlcov/
 .pytest_cache/
 .nox/
 
-# Team data
-data/
+
