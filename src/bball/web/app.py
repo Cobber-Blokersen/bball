@@ -1,4 +1,5 @@
 """Main FastAPI application."""
+
 from __future__ import annotations
 
 from pathlib import Path
@@ -8,9 +9,8 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import HTMLResponse
 from fastapi.staticfiles import StaticFiles
 
-from .routes import admin, teams
-from .routes import pages
 from .auth import CurrentUser, create_default_admin, get_current_user
+from .routes import admin, pages, teams
 from .templating import jinja_env
 
 STATIC_DIR = Path(__file__).parent / "static"
@@ -61,4 +61,3 @@ async def home(
 async def health_check() -> dict[str, str]:
     """Health check endpoint."""
     return {"status": "ok", "message": "Basketball Lineup Optimizer is running"}
-

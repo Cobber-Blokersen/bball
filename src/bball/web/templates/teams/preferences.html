@@ -65,6 +65,23 @@
 .bool-pref-detail { font-size: 0.82rem; color: #888; margin-top: 0.15rem; }
 .bool-save-row { margin-top: 1rem; }
 
+/* Tri-state radio options */
+.mode-options { display: flex; flex-direction: column; gap: 0.6rem; }
+.mode-option {
+    display: flex;
+    align-items: flex-start;
+    gap: 0.6rem;
+    border: 1px solid #e8e8e8;
+    border-radius: 6px;
+    padding: 0.6rem 0.8rem;
+    cursor: pointer;
+    transition: border-color 0.15s, background 0.15s;
+}
+.mode-option:has(input:checked) { border-color: #667eea; background: #f4f5ff; }
+.mode-option input { margin-top: 3px; accent-color: #667eea; cursor: pointer; }
+.mode-name { display: block; font-weight: 600; font-size: 0.9rem; color: #333; }
+.mode-detail { display: block; font-size: 0.8rem; color: #888; margin-top: 0.15rem; }
+
 /* Player picker (power combos) */
 .player-checkboxes {
     display: flex;
@@ -202,7 +219,7 @@
     <!-- ── Boolean Preferences ── -->
     <div class="pref-section">
         <p class="pref-section-title">Solver Preferences</p>
-        <p class="pref-section-desc">Toggle the constraints and objectives the solver uses when generating lineups.</p>
+        <p class="pref-section-desc">Toggle the objectives and rules the solver uses when generating lineups.</p>
         <form method="post" action="/teams/{{ team.id }}/preferences/boolean">
             <ul class="bool-pref-list">
             {% for pdef in pref_defs %}
@@ -221,6 +238,52 @@
             </ul>
             <div class="bool-save-row">
                 <button type="submit" class="button save-btn">Save Preferences</button>
+            </div>
+        </form>
+    </div>
+
+    <!-- ── Back-to-Back Rests (tri-state) ── -->
+    <div class="pref-section">
+        <p class="pref-section-title">{{ nco_pref.name }}</p>
+        <p class="pref-section-desc">{{ nco_pref.detailed_description }}</p>
+        <form method="post" action="/teams/{{ team.id }}/preferences/no-consecutive-off">
+            <div class="mode-options">
+                {% for opt in nco_options %}
+                <label class="mode-option">
+                    <input type="radio" name="no_consecutive_off_mode" value="{{ opt.value }}"
+                           {% if config.no_consecutive_off_mode == opt.value %}checked{% endif %}>
+                    <span>
+                        <span class="mode-name">{{ opt.name }}</span>
+                        <span class="mode-detail">{{ opt.description }}</span>
+                    </span>
+                </label>
+                {% endfor %}
+            </div>
+            <div class="bool-save-row">
+                <button type="submit" class="button save-btn">Save Rest Policy</button>
+            </div>
+        </form>
+    </div>
+
+    <!-- ── Anchor Opening & Closing Periods (tri-state) ── -->
+    <div class="pref-section">
+        <p class="pref-section-title">{{ tc_pref.name }}</p>
+        <p class="pref-section-desc">{{ tc_pref.detailed_description }}</p>
+        <form method="post" action="/teams/{{ team.id }}/preferences/transition-constraints">
+            <div class="mode-options">
+                {% for opt in tc_options %}
+                <label class="mode-option">
+                    <input type="radio" name="transition_constraints_mode" value="{{ opt.value }}"
+                           {% if config.transition_constraints_mode == opt.value %}checked{% endif %}>
+                    <span>
+                        <span class="mode-name">{{ opt.name }}</span>
+                        <span class="mode-detail">{{ opt.description }}</span>
+                    </span>
+                </label>
+                {% endfor %}
+            </div>
+            <div class="bool-save-row">
+                <button type="submit" class="button save-btn">Save Anchor Policy</button>
             </div>
         </form>
     </div>

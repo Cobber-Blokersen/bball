@@ -94,7 +94,11 @@ class InMemoryGameRepository(GameRepository):
 
     def get_by_team_and_date(self, user_id: str, team_id: str, date: str) -> Game | None:
         return next(
-            (game for game in self._games.values() if game.user_id == user_id and game.team_id == team_id and game.date == date),
+            (
+                game
+                for game in self._games.values()
+                if game.user_id == user_id and game.team_id == team_id and game.date == date
+            ),
             None,
         )
 

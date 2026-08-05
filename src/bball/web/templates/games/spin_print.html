@@ -1,0 +1,122 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{{ team.name }} · {{ date }} · Spin #{{ spin_number }}</title>
+    <style>
+        * { box-sizing: border-box; }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+            color: #111;
+            margin: 0;
+            padding: 24px;
+        }
+        h1 { font-size: 1.25rem; margin: 0 0 4px; }
+        .subtitle { color: #555; font-size: 0.9rem; margin-bottom: 20px; }
+        .section-label {
+            font-size: 0.7rem;
+            font-weight: 700;
+            text-transform: uppercase;
+            letter-spacing: 0.08em;
+            color: #666;
+            margin: 20px 0 6px;
+        }
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            font-size: 0.85rem;
+            margin-bottom: 20px;
+        }
+        th {
+            background: #f0f2ff;
+            color: #333;
+            padding: 6px 10px;
+            text-align: left;
+            font-size: 0.75rem;
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+            border-bottom: 2px solid #999;
+        }
+        td {
+            padding: 6px 10px;
+            border-bottom: 1px solid #ccc;
+            vertical-align: top;
+            line-height: 1.6;
+        }
+        tr:last-child td { border-bottom: none; }
+        .period-num { color: #555; font-weight: 700; width: 48px; }
+        .period-time { color: #555; width: 60px; font-variant-numeric: tabular-nums; }
+        .off-cell { color: #999; }
+        .no-solution { padding: 40px 0; text-align: center; color: #b00020; }
+        .no-print {
+            position: absolute;
+            top: 12px;
+            right: 16px;
+        }
+        .no-print button {
+            font-size: 0.85rem;
+            padding: 6px 12px;
+            border-radius: 4px;
+            border: 1px solid #999;
+            background: #fff;
+            cursor: pointer;
+        }
+        @media print {
+            body { padding: 0; }
+            .no-print { display: none; }
+        }
+    </style>
+</head>
+<body>
+    <div class="no-print">
+        <button onclick="window.print()">Print</button>
+    </div>
+    <h1>{{ team.name }} · {{ date }}</h1>
+    <div class="subtitle">Spin #{{ spin_number }}</div>
+
+    {% if display.solved %}
+    <div class="section-label">First Half</div>
+    <table>
+        <thead><tr>
+            <th style="width:48px">#</th>
+            <th style="width:60px">Time</th>
+            <th>On Court</th>
+            <th>Off Court</th>
+        </tr></thead>
+        <tbody>
+        {% for row in display.first_half %}
+        <tr>
+            <td class="period-num">{{ row.period }}</td>
+            <td class="period-time">{{ row.time }}</td>
+            <td>{{ row.on | join(', ') }}</td>
+            <td class="off-cell">{{ row.off | join(', ') }}</td>
+        </tr>
+        {% endfor %}
+        </tbody>
+    </table>
+
+    <div class="section-label">Second Half</div>
+    <table>
+        <thead><tr>
+            <th style="width:48px">#</th>
+            <th style="width:60px">Time</th>
+            <th>On Court</th>
+            <th>Off Court</th>
+        </tr></thead>
+        <tbody>
+        {% for row in display.second_half %}
+        <tr>
+            <td class="period-num">{{ row.period }}</td>
+            <td class="period-time">{{ row.time }}</td>
+            <td>{{ row.on | join(', ') }}</td>
+            <td class="off-cell">{{ row.off | join(', ') }}</td>
+        </tr>
+        {% endfor %}
+        </tbody>
+    </table>
+    {% else %}
+    <div class="no-solution">No solution found ({{ display.status }}).</div>
+    {% endif %}
+</body>
+</html>

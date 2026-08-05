@@ -25,22 +25,10 @@ class LineupPreferenceDefinition:
 
 BOOLEAN_PREFERENCE_DEFINITIONS: tuple[LineupPreferenceDefinition, ...] = (
     LineupPreferenceDefinition(
-        key="no_consecutive_off",
-        name="Avoid back-to-back rests",
-        brief_description="Keep each player from sitting in consecutive periods.",
-        detailed_description="Prevents players from being off the court in two consecutive periods so players rotate more smoothly.",
-    ),
-    LineupPreferenceDefinition(
         key="half_split_balance",
         name="Balance first and second halves",
         brief_description="Spread playtime evenly between the two halves.",
         detailed_description="Penalizes large first-half versus second-half playtime imbalances for each player.",
-    ),
-    LineupPreferenceDefinition(
-        key="transition_constraints",
-        name="Anchor opening and closing periods",
-        brief_description="Link the opening lineup to the half break and the end of the game.",
-        detailed_description="Requires each player to be on the court in the opening period or at the second-half start, and in the opening period or the final period.",
     ),
     LineupPreferenceDefinition(
         key="power_combo_objective",
@@ -59,6 +47,118 @@ def build_default_boolean_preferences() -> dict[str, bool]:
     return {definition.key: definition.default_enabled for definition in BOOLEAN_PREFERENCE_DEFINITIONS}
 
 
+@dataclass(frozen=True)
+class NoConsecutiveOffModeOption:
+    """A selectable mode for the back-to-back rests preference."""
+
+    value: str
+    name: str
+    description: str
+
+
+NO_CONSECUTIVE_OFF_MODE_OPTIONS: tuple[NoConsecutiveOffModeOption, ...] = (
+    NoConsecutiveOffModeOption(
+        value="off",
+        name="Off",
+        description="Do not consider back-to-back rests; the solver may sit a player twice in a row.",
+    ),
+    NoConsecutiveOffModeOption(
+        value="preferred",
+        name="Preferred",
+        description="Prefer to avoid back-to-back rests, but always produce a lineup if some sit consecutively.",
+    ),
+    NoConsecutiveOffModeOption(
+        value="enforced",
+        name="Enforced",
+        description="Require no player to sit two consecutive periods; can make lineups impossible.",
+    ),
+)
+
+
+@dataclass(frozen=True)
+class NoConsecutiveOffPreferenceDefinition:
+    """Metadata for the back-to-back rests preference, which is tri-state rather than boolean."""
+
+    key: str = "no_consecutive_off"
+    name: str = "Avoid back-to-back rests"
+    brief_description: str = "Keep each player from sitting in consecutive periods."
+    detailed_description: str = (
+        "Controls whether players are kept from sitting out two consecutive periods. "
+        "Off leaves it unconstrained; Preferred asks the solver to minimize back-to-back rests "
+        "while always producing a lineup; Enforced makes it a hard rule that can make lineups "
+        "impossible to generate."
+    )
+
+
+NO_CONSECUTIVE_OFF_PREFERENCE: NoConsecutiveOffPreferenceDefinition = NoConsecutiveOffPreferenceDefinition()
+NO_CONSECUTIVE_OFF_MODE_DEFAULT = "preferred"
+
+
+def get_no_consecutive_off_mode_options() -> tuple[NoConsecutiveOffModeOption, ...]:
+    return NO_CONSECUTIVE_OFF_MODE_OPTIONS
+
+
+def is_valid_no_consecutive_off_mode(mode: str) -> bool:
+    return any(option.value == mode for option in NO_CONSECUTIVE_OFF_MODE_OPTIONS)
+
+
+@dataclass(frozen=True)
+class TransitionConstraintsModeOption:
+    """A selectable mode for the anchor-opening-and-closing-periods preference."""
+
+    value: str
+    name: str
+    description: str
+
+
+TRANSITION_CONSTRAINTS_MODE_OPTIONS: tuple[TransitionConstraintsModeOption, ...] = (
+    TransitionConstraintsModeOption(
+        value="off",
+        name="Off",
+        description="Do not link the opening lineup to the half break or the end of the game.",
+    ),
+    TransitionConstraintsModeOption(
+        value="preferred",
+        name="Preferred",
+        description="Anchor opening and closing periods when possible, but always produce a lineup.",
+    ),
+    TransitionConstraintsModeOption(
+        value="enforced",
+        name="Enforced",
+        description="Require every player to anchor the opening period or the half break, and the opening or final.",
+    ),
+)
+
+
+@dataclass(frozen=True)
+class TransitionConstraintsPreferenceDefinition:
+    """Metadata for the anchor-opening-and-closing-periods preference, which is tri-state rather than boolean."""
+
+    key: str = "transition_constraints"
+    name: str = "Anchor opening and closing periods"
+    brief_description: str = "Link the opening lineup to the half break and the end of the game."
+    detailed_description: str = (
+        "Controls how strongly the solver links the opening lineup to the second-half start and the final period. "
+        "Off leaves it unconstrained; Preferred asks the solver to anchor opening and closing periods "
+        "while always producing a lineup; Enforced makes it a hard rule that can make lineups "
+        "impossible to generate."
+    )
+
+
+TRANSITION_CONSTRAINTS_PREFERENCE: TransitionConstraintsPreferenceDefinition = (
+    TransitionConstraintsPreferenceDefinition()
+)
+TRANSITION_CONSTRAINTS_MODE_DEFAULT = "preferred"
+
+
+def get_transition_constraints_mode_options() -> tuple[TransitionConstraintsModeOption, ...]:
+    return TRANSITION_CONSTRAINTS_MODE_OPTIONS
+
+
+def is_valid_transition_constraints_mode(mode: str) -> bool:
+    return any(option.value == mode for option in TRANSITION_CONSTRAINTS_MODE_OPTIONS)
+
+
 @dataclass(slots=True)
 class LineupConfig:
     team: Team
@@ -69,6 +169,8 @@ class LineupConfig:
     on_court_per_period: int = 5
     minutes_per_half: int = 20
     boolean_preferences: dict[str, bool] = field(default_factory=build_default_boolean_preferences)
+    no_consecutive_off_mode: str = NO_CONSECUTIVE_OFF_MODE_DEFAULT
+    transition_constraints_mode: str = TRANSITION_CONSTRAINTS_MODE_DEFAULT
 
 
 @dataclass(slots=True)

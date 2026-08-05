@@ -1,11 +1,23 @@
 """HTML page routes — POST/Redirect/Get pattern throughout."""
+
 from __future__ import annotations
 
 from fastapi import APIRouter, Depends, Form, HTTPException, Request, status
 from fastapi.responses import HTMLResponse, RedirectResponse
 
 from ... import settings
-from ...models import BOOLEAN_PREFERENCE_DEFINITIONS, LineupConfig, Player, Team
+from ...models import (
+    BOOLEAN_PREFERENCE_DEFINITIONS,
+    NO_CONSECUTIVE_OFF_PREFERENCE,
+    TRANSITION_CONSTRAINTS_PREFERENCE,
+    LineupConfig,
+    Player,
+    Team,
+    get_no_consecutive_off_mode_options,
+    get_transition_constraints_mode_options,
+    is_valid_no_consecutive_off_mode,
+    is_valid_transition_constraints_mode,
+)
 from ...solver import solve_team_lineup
 from ..auth import CurrentUser, get_current_user
 from ..lineup_display import build_spin_display
@@ -39,6 +51,7 @@ def _load_team(user_id: str, team_id: str) -> Team:
 # Teams list
 # ---------------------------------------------------------------------------
 
+
 @router.get("/teams", response_class=HTMLResponse)
 async def teams_list(
     request: Request,
@@ -58,11 +71,7 @@ async def create_team(
 ) -> RedirectResponse:
     """Create team from HTML form; player_names is a comma-separated string."""
     team_repo, _ = _repos()
-    players = [
-        Player(name=n.strip())
-        for n in player_names.split(",")
-        if n.strip()
-    ]
+    players = [Player(name=n.strip()) for n in player_names.split(",") if n.strip()]
     team = Team(user_id=current_user.id, name=name.strip(), players=players)
     team_repo.save(team)
     return RedirectResponse(url=f"/teams/{team.id}", status_code=status.HTTP_303_SEE_OTHER)
@@ -71,6 +80,7 @@ async def create_team(
 # ---------------------------------------------------------------------------
 # Team detail
 # ---------------------------------------------------------------------------
+
 
 @router.get("/teams/{team_id}", response_class=HTMLResponse)
 async def team_detail(
@@ -133,12 +143,14 @@ async def delete_team(
 # Games
 # ---------------------------------------------------------------------------
 
+
 @router.get("/games", response_class=HTMLResponse)
 async def games_index(
     request: Request,
     current_user: CurrentUser = Depends(get_current_user),
 ) -> str:
     from datetime import date
+
     team_repo, game_repo = _repos()
     teams = team_repo.list(current_user.id)
     all_games = game_repo.list(current_user.id)
@@ -307,9 +319,35 @@ async def spin_view(
     )
 
 
+@router.get("/teams/{team_id}/games/{date}/spins/{spin_number}/print", response_class=HTMLResponse)
+async def spin_print(
+    team_id: str,
+    date: str,
+    spin_number: int,
+    current_user: CurrentUser = Depends(get_current_user),
+) -> str:
+    team = _load_team(current_user.id, team_id)
+    _, game_repo = _repos()
+    game = game_repo.get_by_team_and_date(current_user.id, team_id, date)
+    if not game:
+        raise HTTPException(status_code=404, detail="Game not found")
+    spin = next((s for s in game.lineup_spins if s.number == spin_number), None)
+    if not spin:
+        raise HTTPException(status_code=404, detail="Spin not found")
+    display = build_spin_display(spin)
+    return _render(
+        "games/spin_print.html",
+        team=team,
+        date=date,
+        spin_number=spin_number,
+        display=display,
+    )
+
+
 # ---------------------------------------------------------------------------
 # Team preferences
 # ---------------------------------------------------------------------------
+
 
 def _pref_redirect(team_id: str) -> RedirectResponse:
     return RedirectResponse(url=f"/teams/{team_id}/preferences", status_code=status.HTTP_303_SEE_OTHER)
@@ -334,6 +372,10 @@ async def team_preferences(
         team=team,
         config=config,
         pref_defs=BOOLEAN_PREFERENCE_DEFINITIONS,
+        nco_pref=NO_CONSECUTIVE_OFF_PREFERENCE,
+        nco_options=get_no_consecutive_off_mode_options(),
+        tc_pref=TRANSITION_CONSTRAINTS_PREFERENCE,
+        tc_options=get_transition_constraints_mode_options(),
         **_ctx(current_user),
     )
 
@@ -372,6 +414,42 @@ async def save_boolean_prefs(
     config.boolean_preferences = {key: key in form for key in known_keys}
     team.lineup_config = config
     team_repo.save(team)
+    return _pref_redirect(team_id)
+
+
+@router.post("/teams/{team_id}/preferences/no-consecutive-off")
+async def save_no_consecutive_off_mode(
+    team_id: str,
+    request: Request,
+    current_user: CurrentUser = Depends(get_current_user),
+) -> RedirectResponse:
+    team_repo, _ = _repos()
+    team = _load_team(current_user.id, team_id)
+    config = _get_config(team)
+    form = await request.form()
+    mode = str(form.get("no_consecutive_off_mode", ""))
+    if is_valid_no_consecutive_off_mode(mode):
+        config.no_consecutive_off_mode = mode
+        team.lineup_config = config
+        team_repo.save(team)
+    return _pref_redirect(team_id)
+
+
+@router.post("/teams/{team_id}/preferences/transition-constraints")
+async def save_transition_constraints_mode(
+    team_id: str,
+    request: Request,
+    current_user: CurrentUser = Depends(get_current_user),
+) -> RedirectResponse:
+    team_repo, _ = _repos()
+    team = _load_team(current_user.id, team_id)
+    config = _get_config(team)
+    form = await request.form()
+    mode = str(form.get("transition_constraints_mode", ""))
+    if is_valid_transition_constraints_mode(mode):
+        config.transition_constraints_mode = mode
+        team.lineup_config = config
+        team_repo.save(team)
     return _pref_redirect(team_id)
 
 

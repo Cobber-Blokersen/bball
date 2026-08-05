@@ -196,6 +196,9 @@
             <a href="/teams/{{ team.id }}/games/{{ date }}/spins/{{ spin_number + 1 }}" class="button secondary" style="padding:0.4rem 0.85rem;font-size:0.85rem;">Next ›</a>
             {% endif %}
             <a href="/teams/{{ team.id }}/games/{{ date }}" class="button secondary" style="padding:0.4rem 0.85rem;font-size:0.85rem;">All Spins</a>
+            {% if display.solved %}
+            <a href="/teams/{{ team.id }}/games/{{ date }}/spins/{{ spin_number }}/print" target="_blank" rel="noopener" class="button" style="padding:0.4rem 0.85rem;font-size:0.85rem;">Print</a>
+            {% endif %}
             <form method="post" action="/teams/{{ team.id }}/games/{{ date }}/spins/{{ spin_number }}/delete"
                   onsubmit="return confirm('Delete Spin #{{ spin_number }}?')" style="display:inline;">
                 <button type="submit" class="button danger" style="padding:0.4rem 0.85rem;font-size:0.85rem;">Delete</button>
@@ -304,6 +307,18 @@
                 <div class="config-section-label">Setup</div>
                 <div>{{ cfg.get('on_court_per_period', 5) }} on court · {{ cfg.get('periods_per_half', [6,6])[0] }}+{{ cfg.get('periods_per_half', [6,6])[1] }} periods · {{ cfg.get('minutes_per_half', 20) }} min/half</div>
             </div>
+            {% if display.no_consecutive_off_mode %}
+            <div class="config-section">
+                <div class="config-section-label">Avoid back-to-back rests</div>
+                <div>{{ display.no_consecutive_off_mode_name }} ({{ display.no_consecutive_off_mode }})</div>
+            </div>
+            {% endif %}
+            {% if display.transition_constraints_mode %}
+            <div class="config-section">
+                <div class="config-section-label">Anchor opening and closing periods</div>
+                <div>{{ display.transition_constraints_mode_name }} ({{ display.transition_constraints_mode }})</div>
+            </div>
+            {% endif %}
             <div style="margin-top:1rem;">
                 <a href="/teams/{{ team.id }}/preferences" style="font-size:0.82rem;color:#667eea;text-decoration:none;">Edit preferences →</a>
             </div>

@@ -9,7 +9,18 @@ from rich.console import Console
 from rich.table import Table
 
 from . import settings
-from .models import LineupConfig, Player, Team, User, get_boolean_preference_definitions
+from .models import (
+    NO_CONSECUTIVE_OFF_PREFERENCE,
+    TRANSITION_CONSTRAINTS_PREFERENCE,
+    LineupConfig,
+    Player,
+    Team,
+    get_boolean_preference_definitions,
+    get_no_consecutive_off_mode_options,
+    get_transition_constraints_mode_options,
+    is_valid_no_consecutive_off_mode,
+    is_valid_transition_constraints_mode,
+)
 from .solver import normalize_player_argument_values, solve_team_lineup
 
 PLAYER_CONSOLE_COLORS = [
@@ -36,6 +47,7 @@ def set_current_user_id(user_id: str) -> None:
 def get_current_user_id() -> str:
     """Get the current user ID."""
     return _current_user_id
+
 
 app = typer.Typer(help="Basketball lineup optimizer and manager", no_args_is_help=True)
 team_app = typer.Typer(help="Team-related commands", no_args_is_help=True)
@@ -462,16 +474,34 @@ def show_team(team_name: Annotated[str, typer.Argument(help="Team name")]) -> No
         console.print(f"\n[bold]Never on at the start[/bold]: {required_players}")
 
 
+def _tri_state_preferences() -> dict[str, dict[str, Any]]:
+    """Return the tri-state lineup preferences keyed by preference key."""
+    return {
+        NO_CONSECUTIVE_OFF_PREFERENCE.key: {
+            "definition": NO_CONSECUTIVE_OFF_PREFERENCE,
+            "attr": "no_consecutive_off_mode",
+            "is_valid": is_valid_no_consecutive_off_mode,
+            "options": get_no_consecutive_off_mode_options,
+        },
+        TRANSITION_CONSTRAINTS_PREFERENCE.key: {
+            "definition": TRANSITION_CONSTRAINTS_PREFERENCE,
+            "attr": "transition_constraints_mode",
+            "is_valid": is_valid_transition_constraints_mode,
+            "options": get_transition_constraints_mode_options,
+        },
+    }
+
+
 @team_app.command("preference-list", help="List the team's configurable lineup preferences.", no_args_is_help=True)
 def list_team_preferences(team_name: Annotated[str, typer.Argument(help="Team name")]) -> None:
-    """Show all configurable boolean lineup preferences for a team."""
+    """Show all configurable lineup preferences for a team."""
     team = load_team(team_name)
     config = team.lineup_config or LineupConfig(team=team)
 
     console = Console()
     table = Table(show_header=True, header_style="bold cyan")
     table.add_column("Preference Key")
-    table.add_column("Enabled")
+    table.add_column("State")
     table.add_column("Description")
 
     for definition in get_boolean_preference_definitions():
@@ -482,7 +512,49 @@ def list_team_preferences(team_name: Annotated[str, typer.Argument(help="Team na
             definition.detailed_description,
         )
 
+    for preference in _tri_state_preferences().values():
+        table.add_row(
+            preference["definition"].key,
+            getattr(config, preference["attr"]),
+            preference["definition"].detailed_description,
+        )
+
     console.print(table)
+
+
+@team_app.command(
+    "preference-mode",
+    help="Set a tri-state lineup preference mode (off, preferred, or enforced).",
+    no_args_is_help=True,
+)
+def set_preference_mode(
+    team_name: Annotated[str, typer.Argument(help="Team name")],
+    preference_key: Annotated[
+        str,
+        typer.Argument(help="Preference key: no_consecutive_off or transition_constraints"),
+    ],
+    mode: Annotated[str, typer.Argument(help="Mode: off, preferred, or enforced")],
+) -> None:
+    """Set a tri-state lineup preference."""
+    preferences = _tri_state_preferences()
+    preference = preferences.get(preference_key)
+    if preference is None:
+        raise typer.BadParameter(
+            f"Unknown tri-state preference key: {preference_key}. Available options: {', '.join(preferences)}"
+        )
+
+    if not preference["is_valid"](mode):
+        available = ", ".join(option.value for option in preference["options"]())
+        raise typer.BadParameter(f"Unknown mode: {mode}. Available options: {available}")
+
+    team = load_team(team_name)
+    team_repo = get_repository_classes().team()
+    config = team.lineup_config or LineupConfig(team=team)
+    setattr(config, preference["attr"], mode)
+    team.lineup_config = config
+    team_repo.save(team)
+
+    typer.echo(f"{preference['definition'].name}: {mode}")
 
 
 @team_app.command("preference-toggle", help="Enable or disable a team lineup preference.", no_args_is_help=True)
@@ -857,6 +929,12 @@ def show_spin(
         never_on_first_players = spin.config_snapshot.get("never_on_first_period_players", [])
         if never_on_first_players:
             console.print(f"[bold]Always start off[/bold]: {', '.join(never_on_first_players)}")
+        boolean_preferences = spin.config_snapshot.get("boolean_preferences", {})
+        if boolean_preferences:
+            console.print("[bold]Preferences[/bold]")
+            pref_defs = {definition.key: definition.name for definition in get_boolean_preference_definitions()}
+            for key, enabled in boolean_preferences.items():
+                console.print(f"- {pref_defs.get(key, key)}: {'on' if enabled else 'off'}")
 
 
 @spin_app.command("run", help="Generate a new lineup spin for a team and game.", no_args_is_help=True)

@@ -1,11 +1,12 @@
 """User routes for managing teams and games."""
+
 from __future__ import annotations
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel
 
 from ... import settings
-from ...models import Game, Player, Team
+from ...models import Player, Team
 from ...repositories import GameRepository, TeamRepository
 from ..auth import CurrentUser, get_current_user
 

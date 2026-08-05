@@ -1,8 +1,8 @@
 """Authentication and authorization handling."""
+
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Optional
 
 from fastapi import Depends, HTTPException, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
@@ -82,7 +82,7 @@ def delete_user(user_id: str) -> bool:
 
 
 async def get_current_user(
-    credentials: Optional[HTTPAuthorizationCredentials] = Depends(security),
+    credentials: HTTPAuthorizationCredentials | None = Depends(security),
 ) -> CurrentUser:
     """Get the currently authenticated user from the request."""
     if not credentials:

@@ -5,10 +5,57 @@ import sqlite3
 import time
 from datetime import UTC, datetime
 from pathlib import Path
+from typing import Any
 
 from . import settings
-from .models import Game, LineupConfig, LineupSpin, Player, Team, User, build_default_boolean_preferences
+from .models import (
+    NO_CONSECUTIVE_OFF_MODE_DEFAULT,
+    TRANSITION_CONSTRAINTS_MODE_DEFAULT,
+    Game,
+    LineupConfig,
+    LineupSpin,
+    Player,
+    Team,
+    User,
+    build_default_boolean_preferences,
+)
 from .repositories import GameRepository, PlayerRepository, TeamRepository, UserRepository
+
+
+def _deserialize_config(team: Team, config_data: dict[str, Any]) -> LineupConfig:
+    """Rebuild a LineupConfig from persisted data, migrating legacy boolean preferences."""
+    boolean_preferences = {
+        **build_default_boolean_preferences(),
+        **config_data.get("boolean_preferences", {}),
+    }
+    no_consecutive_off_mode = config_data.get("no_consecutive_off_mode")
+    if no_consecutive_off_mode is None:
+        if "no_consecutive_off" in boolean_preferences:
+            no_consecutive_off_mode = "enforced" if boolean_preferences["no_consecutive_off"] else "off"
+        else:
+            no_consecutive_off_mode = NO_CONSECUTIVE_OFF_MODE_DEFAULT
+    boolean_preferences.pop("no_consecutive_off", None)
+
+    transition_constraints_mode = config_data.get("transition_constraints_mode")
+    if transition_constraints_mode is None:
+        if "transition_constraints" in boolean_preferences:
+            transition_constraints_mode = "enforced" if boolean_preferences["transition_constraints"] else "off"
+        else:
+            transition_constraints_mode = TRANSITION_CONSTRAINTS_MODE_DEFAULT
+    boolean_preferences.pop("transition_constraints", None)
+
+    return LineupConfig(
+        team=team,
+        power_combos=[list(combo) for combo in config_data.get("power_combos", [])],
+        required_final_period_players=list(config_data.get("required_final_period_players", [])),
+        never_on_first_period_players=list(config_data.get("never_on_first_period_players", [])),
+        periods_per_half=list(config_data.get("periods_per_half", [6, 6])),
+        on_court_per_period=config_data.get("on_court_per_period", 5),
+        minutes_per_half=config_data.get("minutes_per_half", 20),
+        boolean_preferences=boolean_preferences,
+        no_consecutive_off_mode=no_consecutive_off_mode,
+        transition_constraints_mode=transition_constraints_mode,
+    )
 
 
 class SQLiteUserRepository(UserRepository):
@@ -172,50 +219,21 @@ class SQLiteTeamRepository(TeamRepository):
         players_data = json.loads(players_json)
         players = [Player(id=item["id"], name=item["name"]) for item in players_data]
         team = Team(id=team_id, user_id=returned_user_id, name=name, players=players)
-        if config_json:
-            config_data = json.loads(config_json)
-            team.lineup_config = LineupConfig(
-                team=team,
-                power_combos=[list(combo) for combo in config_data.get("power_combos", [])],
-                required_final_period_players=list(config_data.get("required_final_period_players", [])),
-                never_on_first_period_players=list(config_data.get("never_on_first_period_players", [])),
-                periods_per_half=list(config_data.get("periods_per_half", [6, 6])),
-                on_court_per_period=config_data.get("on_court_per_period", 5),
-                minutes_per_half=config_data.get("minutes_per_half", 20),
-                boolean_preferences={
-                    **build_default_boolean_preferences(),
-                    **config_data.get("boolean_preferences", {}),
-                },
-            )
-        else:
-            team.lineup_config = None
+        team.lineup_config = _deserialize_config(team, json.loads(config_json)) if config_json else None
         return team
 
     def list(self, user_id: str) -> list[Team]:
         with self._connect() as conn:
-            rows = conn.execute("SELECT id, user_id, name, players_json, config_json FROM teams WHERE user_id = ? ORDER BY name", (user_id,)).fetchall()
+            rows = conn.execute(
+                "SELECT id, user_id, name, players_json, config_json FROM teams WHERE user_id = ? ORDER BY name",
+                (user_id,),
+            ).fetchall()
         teams: list[Team] = []
         for team_id, returned_user_id, name, players_json, config_json in rows:
             players_data = json.loads(players_json)
             players = [Player(id=item["id"], name=item["name"]) for item in players_data]
             team = Team(id=team_id, user_id=returned_user_id, name=name, players=players)
-            if config_json:
-                config_data = json.loads(config_json)
-                team.lineup_config = LineupConfig(
-                    team=team,
-                    power_combos=[list(combo) for combo in config_data.get("power_combos", [])],
-                    required_final_period_players=list(config_data.get("required_final_period_players", [])),
-                    never_on_first_period_players=list(config_data.get("never_on_first_period_players", [])),
-                    periods_per_half=list(config_data.get("periods_per_half", [6, 6])),
-                    on_court_per_period=config_data.get("on_court_per_period", 5),
-                    minutes_per_half=config_data.get("minutes_per_half", 20),
-                    boolean_preferences={
-                        **build_default_boolean_preferences(),
-                        **config_data.get("boolean_preferences", {}),
-                    },
-                )
-            else:
-                team.lineup_config = None
+            team.lineup_config = _deserialize_config(team, json.loads(config_json)) if config_json else None
             teams.append(team)
         return teams
 
@@ -233,6 +251,8 @@ class SQLiteTeamRepository(TeamRepository):
                         "on_court_per_period": config.on_court_per_period,
                         "minutes_per_half": config.minutes_per_half,
                         "boolean_preferences": config.boolean_preferences,
+                        "no_consecutive_off_mode": config.no_consecutive_off_mode,
+                        "transition_constraints_mode": config.transition_constraints_mode,
                     }
                 )
             conn.execute(
@@ -316,7 +336,14 @@ class SQLiteGameRepository(GameRepository):
             )
             for item in spins_data
         ]
-        return Game(id=game_id, user_id=returned_user_id, team_id=team_id, date=date, lineup_spins=spins, selected_lineup_id=selected_lineup_id)
+        return Game(
+            id=game_id,
+            user_id=returned_user_id,
+            team_id=team_id,
+            date=date,
+            lineup_spins=spins,
+            selected_lineup_id=selected_lineup_id,
+        )
 
     def get_by_team_and_date(self, user_id: str, team_id: str, date: str) -> Game | None:
         with self._connect() as conn:
@@ -341,7 +368,14 @@ class SQLiteGameRepository(GameRepository):
             )
             for item in spins_data
         ]
-        return Game(id=game_id, user_id=returned_user_id, team_id=team_id, date=date, lineup_spins=spins, selected_lineup_id=selected_lineup_id)
+        return Game(
+            id=game_id,
+            user_id=returned_user_id,
+            team_id=team_id,
+            date=date,
+            lineup_spins=spins,
+            selected_lineup_id=selected_lineup_id,
+        )
 
     def list(self, user_id: str) -> list[Game]:
         with self._connect() as conn:
@@ -365,7 +399,14 @@ class SQLiteGameRepository(GameRepository):
                 for item in spins_data
             ]
             games.append(
-                Game(id=game_id, user_id=returned_user_id, team_id=team_id, date=date, lineup_spins=spins, selected_lineup_id=selected_lineup_id)
+                Game(
+                    id=game_id,
+                    user_id=returned_user_id,
+                    team_id=team_id,
+                    date=date,
+                    lineup_spins=spins,
+                    selected_lineup_id=selected_lineup_id,
+                )
             )
         return games
 

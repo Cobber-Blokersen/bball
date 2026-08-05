@@ -3,7 +3,6 @@ import uuid
 from pathlib import Path
 from typing import Any
 
-# TODO: Make unit tests use a DB which is not the main one
 from pytest import CaptureFixture, MonkeyPatch
 from typer.testing import CliRunner
 
@@ -17,7 +16,7 @@ from bball.repositories_inmemory import (
     InMemoryUserRepository,
 )
 from bball.repositories_sqlite import SQLiteGameRepository, SQLitePlayerRepository, SQLiteTeamRepository
-from bball.solver import build_starting_lineup
+from bball.solver import build_starting_lineup, solve_team_lineup
 from tests.fixtures import build_default_team
 
 
@@ -61,8 +60,10 @@ def test_lineup_config_defaults_boolean_preferences_to_enabled() -> None:
     team = Team(id="t-1", name="Vikings", players=[Player(id="p-1", name="Indie")])
     config = LineupConfig(team=team)
 
-    assert config.boolean_preferences["no_consecutive_off"] is True
-    assert config.boolean_preferences["transition_constraints"] is True
+    assert "no_consecutive_off" not in config.boolean_preferences
+    assert config.no_consecutive_off_mode == "preferred"
+    assert "transition_constraints" not in config.boolean_preferences
+    assert config.transition_constraints_mode == "preferred"
     assert config.boolean_preferences["power_combo_objective"] is True
     assert config.boolean_preferences["half_split_balance"] is True
 
@@ -71,20 +72,90 @@ def test_team_preference_toggle_updates_cli_config() -> None:
     runner = CliRunner()
     team_repo = SQLiteTeamRepository()
     team_name = f"cli-pref-team-{uuid.uuid4().hex}"
-    team = Team(id=f"cli-pref-team-{uuid.uuid4().hex}", name=team_name, players=[Player(id="p-1", name="Ace")])
+    team = Team(
+        id=f"cli-pref-team-{uuid.uuid4().hex}",
+        user_id="admin-001",
+        name=team_name,
+        players=[Player(id="p-1", name="Ace")],
+    )
     team_repo.save(team)
 
-    list_result = runner.invoke(app, ["team", "preference-list", team_name])
+    list_result = runner.invoke(app, ["--user", "admin-001", "team", "preference-list", team_name])
     assert list_result.exit_code == 0
+    assert "half_split_balance" in list_result.stdout
     assert "no_consecutive_off" in list_result.stdout
+    assert "transition_constraints" in list_result.stdout
 
-    toggle_result = runner.invoke(app, ["team", "preference-toggle", team_name, "no_consecutive_off", "--disable"])
+    toggle_result = runner.invoke(
+        app, ["--user", "admin-001", "team", "preference-toggle", team_name, "half_split_balance", "--disable"]
+    )
     assert toggle_result.exit_code == 0
 
-    updated_team = team_repo.get(team.id)
+    updated_team = team_repo.get("admin-001", team.id)
     assert updated_team is not None
     assert updated_team.lineup_config is not None
-    assert updated_team.lineup_config.boolean_preferences["no_consecutive_off"] is False
+    assert updated_team.lineup_config.boolean_preferences["half_split_balance"] is False
+
+
+def test_team_preference_mode_updates_cli_config() -> None:
+    runner = CliRunner()
+    team_repo = SQLiteTeamRepository()
+    team_name = f"cli-pref-mode-team-{uuid.uuid4().hex}"
+    team = Team(
+        id=f"cli-pref-mode-team-{uuid.uuid4().hex}",
+        user_id="admin-001",
+        name=team_name,
+        players=[Player(id="p-1", name="Ace")],
+    )
+    team_repo.save(team)
+
+    mode_result = runner.invoke(
+        app, ["--user", "admin-001", "team", "preference-mode", team_name, "no_consecutive_off", "enforced"]
+    )
+    assert mode_result.exit_code == 0
+
+    updated_team = team_repo.get("admin-001", team.id)
+    assert updated_team is not None
+    assert updated_team.lineup_config is not None
+    assert updated_team.lineup_config.no_consecutive_off_mode == "enforced"
+
+    invalid_result = runner.invoke(
+        app, ["--user", "admin-001", "team", "preference-mode", team_name, "no_consecutive_off", "sometimes"]
+    )
+    assert invalid_result.exit_code != 0
+
+
+def test_team_transition_constraints_mode_updates_cli_config() -> None:
+    runner = CliRunner()
+    team_repo = SQLiteTeamRepository()
+    team_name = f"cli-pref-transition-team-{uuid.uuid4().hex}"
+    team = Team(
+        id=f"cli-pref-transition-team-{uuid.uuid4().hex}",
+        user_id="admin-001",
+        name=team_name,
+        players=[Player(id="p-1", name="Ace")],
+    )
+    team_repo.save(team)
+
+    mode_result = runner.invoke(
+        app, ["--user", "admin-001", "team", "preference-mode", team_name, "transition_constraints", "enforced"]
+    )
+    assert mode_result.exit_code == 0
+
+    updated_team = team_repo.get("admin-001", team.id)
+    assert updated_team is not None
+    assert updated_team.lineup_config is not None
+    assert updated_team.lineup_config.transition_constraints_mode == "enforced"
+
+    invalid_key_result = runner.invoke(
+        app, ["--user", "admin-001", "team", "preference-mode", team_name, "bogus_key", "enforced"]
+    )
+    assert invalid_key_result.exit_code != 0
+
+    invalid_result = runner.invoke(
+        app, ["--user", "admin-001", "team", "preference-mode", team_name, "transition_constraints", "sometimes"]
+    )
+    assert invalid_result.exit_code != 0
 
 
 def test_build_starting_lineup_excludes_never_on_first_players() -> None:
@@ -133,12 +204,15 @@ def test_run_spin_rejects_start_conflicts_with_never_on_first_rule() -> None:
     team_name = f"cli-spin-start-conflict-{uuid.uuid4().hex}"
     team = Team(
         id=f"cli-spin-start-conflict-{uuid.uuid4().hex}",
+        user_id="admin-001",
         name=team_name,
         players=[Player(id="p-1", name="Aaron"), Player(id="p-2", name="Erin"), Player(id="p-3", name="Bo")],
     )
     team.lineup_config = LineupConfig(team=team, never_on_first_period_players=["Aaron", "Erin"])
     team_repo.save(team)
-    game_repo.save(Game(id="spin-conflict-game", team_id=team.id, date="2026-08-01", lineup_spins=[]))
+    game_repo.save(
+        Game(id="spin-conflict-game", user_id="admin-001", team_id=team.id, date="2026-08-01", lineup_spins=[])
+    )
 
     result = runner.invoke(app, ["game", "spin", "run", team_name, "2026-08-01", "--start", "Aaron,Erin"])
 
@@ -153,12 +227,12 @@ def test_in_memory_repositories_can_back_the_domain() -> None:
     assert player.name == "Indie"
 
     team_repo = InMemoryTeamRepository([Team(id="t-1", name="Vikings", players=[player])])
-    team = team_repo.get("t-1")
+    team = team_repo.get("", "t-1")
     assert team is not None
     assert team.name == "Vikings"
 
     game_repo = InMemoryGameRepository([Game(id="g-1", team_id="t-1", date="2026-01-10")])
-    game = game_repo.get("g-1")
+    game = game_repo.get("", "g-1")
     assert game is not None
     assert game.team_id == "t-1"
 
@@ -166,7 +240,7 @@ def test_in_memory_repositories_can_back_the_domain() -> None:
 def test_in_memory_game_repository_can_lookup_by_team_and_date() -> None:
     game_repo = InMemoryGameRepository([Game(id="g-1", team_id="t-1", date="2026-01-10")])
 
-    found_game = game_repo.get_by_team_and_date("t-1", "2026-01-10")
+    found_game = game_repo.get_by_team_and_date("", "t-1", "2026-01-10")
 
     assert found_game is not None
     assert found_game.id == "g-1"
@@ -180,7 +254,7 @@ def test_sqlite_repositories_round_trip_player_team_and_game() -> None:
     team = Team(id="sqlite-team", name="SQLite Test Team", players=[Player(id="sqlite-player", name="Ace")])
     team_repo.save(team)
 
-    loaded_team = team_repo.get(team.id)
+    loaded_team = team_repo.get(team.user_id, team.id)
     assert loaded_team is not None
     assert loaded_team.name == team.name
     assert loaded_team.players[0].name == "Ace"
@@ -193,7 +267,7 @@ def test_sqlite_repositories_round_trip_player_team_and_game() -> None:
     )
     game_repo.save(game)
 
-    loaded_game = game_repo.get(game.id)
+    loaded_game = game_repo.get(game.user_id, game.id)
     assert loaded_game is not None
     assert loaded_game.team_id == team.id
     assert loaded_game.date == "week-1"
@@ -222,7 +296,7 @@ def test_sqlite_repositories_round_trip_solution_snapshot() -> None:
 
     game_repo.save(game)
 
-    loaded_game = game_repo.get(game.id)
+    loaded_game = game_repo.get(game.user_id, game.id)
     assert loaded_game is not None
     assert loaded_game.lineup_spins[0].solution_snapshot is not None
     assert loaded_game.lineup_spins[0].solution_snapshot["players"] == ["Ace"]
@@ -254,7 +328,7 @@ def test_team_add_creates_team_with_players() -> None:
     assert "Created team" in result.stdout
 
     team_repo = SQLiteTeamRepository()
-    created_team = next((team for team in team_repo.list() if team.name == team_name), None)
+    created_team = next((team for team in team_repo.list("admin-001") if team.name == team_name), None)
     assert created_team is not None
     assert [player.name for player in created_team.players] == ["Ace", "Bo"]
 
@@ -262,7 +336,9 @@ def test_team_add_creates_team_with_players() -> None:
 def test_team_show_includes_stored_lineup_settings() -> None:
     runner = CliRunner()
     team_repo = SQLiteTeamRepository()
-    team = Team(id="cli-show-team", name="Show Team", players=[Player(id="cli-player", name="Ace")])
+    team = Team(
+        id="cli-show-team", user_id="admin-001", name="Show Team", players=[Player(id="cli-player", name="Ace")]
+    )
     team.lineup_config = LineupConfig(
         team=team,
         power_combos=[["Ace", "Bo"], ["Cara", "Drew"]],
@@ -283,7 +359,10 @@ def test_team_player_add_and_remove_update_roster() -> None:
     team_repo = SQLiteTeamRepository()
     team_name = f"cli-player-roster-{uuid.uuid4().hex}"
     team = Team(
-        id=f"cli-player-roster-{uuid.uuid4().hex}", name=team_name, players=[Player(id="cli-player-ace", name="Ace")]
+        id=f"cli-player-roster-{uuid.uuid4().hex}",
+        user_id="admin-001",
+        name=team_name,
+        players=[Player(id="cli-player-ace", name="Ace")],
     )
     team_repo.save(team)
 
@@ -291,7 +370,7 @@ def test_team_player_add_and_remove_update_roster() -> None:
     assert add_result.exit_code == 0
     assert "Added player" in add_result.stdout
 
-    updated_team = team_repo.get(team.id)
+    updated_team = team_repo.get("admin-001", team.id)
     assert updated_team is not None
     assert [player.name for player in updated_team.players] == ["Ace", "Bo", "Cara"]
 
@@ -299,7 +378,7 @@ def test_team_player_add_and_remove_update_roster() -> None:
     assert remove_result.exit_code == 0
     assert "Removed player" in remove_result.stdout
 
-    updated_team = team_repo.get(team.id)
+    updated_team = team_repo.get("admin-001", team.id)
     assert updated_team is not None
     assert [player.name for player in updated_team.players] == ["Ace", "Cara"]
 
@@ -310,6 +389,7 @@ def test_never_on_first_players_are_stored_and_manageable_via_cli() -> None:
     team_name = f"cli-never-on-first-{uuid.uuid4().hex}"
     team = Team(
         id=f"cli-never-on-first-{uuid.uuid4().hex}",
+        user_id="admin-001",
         name=team_name,
         players=[Player(id="p-1", name="Ace"), Player(id="p-2", name="Bo")],
     )
@@ -318,7 +398,7 @@ def test_never_on_first_players_are_stored_and_manageable_via_cli() -> None:
     add_result = runner.invoke(app, ["team", "rule", "never-on-first", "add", team_name, "Ace", "Bo"])
     assert add_result.exit_code == 0
 
-    updated_team = team_repo.get(team.id)
+    updated_team = team_repo.get("admin-001", team.id)
     assert updated_team is not None
     assert updated_team.lineup_config is not None
     assert updated_team.lineup_config.never_on_first_period_players == ["Ace", "Bo"]
@@ -330,7 +410,7 @@ def test_never_on_first_players_are_stored_and_manageable_via_cli() -> None:
     remove_result = runner.invoke(app, ["team", "rule", "never-on-first", "remove", team_name, "1"])
     assert remove_result.exit_code == 0
 
-    updated_team = team_repo.get(team.id)
+    updated_team = team_repo.get("admin-001", team.id)
     assert updated_team is not None
     assert updated_team.lineup_config is not None
     assert updated_team.lineup_config.never_on_first_period_players == ["Bo"]
@@ -340,7 +420,12 @@ def test_rule_list_add_rejects_players_not_on_the_team() -> None:
     runner = CliRunner()
     team_repo = SQLiteTeamRepository()
     team_name = f"cli-rule-member-check-{uuid.uuid4().hex}"
-    team = Team(id=f"cli-rule-member-check-{uuid.uuid4().hex}", name=team_name, players=[Player(id="p-1", name="Ace")])
+    team = Team(
+        id=f"cli-rule-member-check-{uuid.uuid4().hex}",
+        user_id="admin-001",
+        name=team_name,
+        players=[Player(id="p-1", name="Ace")],
+    )
     team_repo.save(team)
 
     commands = [
@@ -354,7 +439,7 @@ def test_rule_list_add_rejects_players_not_on_the_team() -> None:
         assert result.exit_code == 1
         assert "Unknown player" in result.stdout
 
-    updated_team = team_repo.get(team.id)
+    updated_team = team_repo.get("admin-001", team.id)
     assert updated_team is not None
     assert updated_team.lineup_config is not None
     assert updated_team.lineup_config.required_final_period_players == []
@@ -367,23 +452,30 @@ def test_team_remove_deletes_team_and_related_games_after_confirmation() -> None
     team_repo = SQLiteTeamRepository()
     game_repo = SQLiteGameRepository()
     team_name = f"cli-remove-team-{uuid.uuid4().hex}"
-    team = Team(id=f"cli-remove-team-{uuid.uuid4().hex}", name=team_name, players=[Player(id="p-1", name="Ace")])
+    team = Team(
+        id=f"cli-remove-team-{uuid.uuid4().hex}",
+        user_id="admin-001",
+        name=team_name,
+        players=[Player(id="p-1", name="Ace")],
+    )
     team_repo.save(team)
-    game = Game(id="remove-game", team_id=team.id, date="2026-01-01", lineup_spins=[])
+    game = Game(id="remove-game", user_id="admin-001", team_id=team.id, date="2026-01-01", lineup_spins=[])
     game_repo.save(game)
 
     result = runner.invoke(app, ["team", "remove", team_name], input="y\n")
 
     assert result.exit_code == 0
-    assert team_repo.get(team.id) is None
-    assert game_repo.get(game.id) is None
+    assert team_repo.get("admin-001", team.id) is None
+    assert game_repo.get("admin-001", game.id) is None
 
 
 def test_spin_show_includes_config_snapshot() -> None:
     runner = CliRunner()
     team_repo = SQLiteTeamRepository()
     game_repo = SQLiteGameRepository()
-    team = Team(id="cli-spin-team", name="Spin Team", players=[Player(id="cli-spin-player", name="Ace")])
+    team = Team(
+        id="cli-spin-team", user_id="admin-001", name="Spin Team", players=[Player(id="cli-spin-player", name="Ace")]
+    )
     team.lineup_config = LineupConfig(
         team=team,
         power_combos=[["Ace", "Bo"]],
@@ -391,7 +483,7 @@ def test_spin_show_includes_config_snapshot() -> None:
     )
     team_repo.save(team)
 
-    game = Game(id="cli-spin-game", team_id=team.id, date="spin-day", lineup_spins=[])
+    game = Game(id="cli-spin-game", user_id="admin-001", team_id=team.id, date="spin-day", lineup_spins=[])
     spin = LineupSpin(
         id="cli-spin-1",
         number=1,
@@ -414,7 +506,7 @@ def test_spin_show_includes_config_snapshot() -> None:
     game.add_spin(spin)
     game_repo.save(game)
 
-    loaded_game = game_repo.get(game.id)
+    loaded_game = game_repo.get("admin-001", game.id)
     loaded_spin = loaded_game.lineup_spins[0]  # type: ignore
     assert loaded_spin.config_snapshot["required_final_period_players"] == ["Ace"]  # type: ignore
 
@@ -426,14 +518,35 @@ def test_spin_show_includes_config_snapshot() -> None:
     assert "Ace" in result.stdout
 
 
+def test_solved_spin_snapshot_records_boolean_preferences() -> None:
+    team = Team(
+        id="snapshot-prefs-team",
+        user_id="admin-001",
+        name="Snapshot Prefs Team",
+        players=[Player(id=f"snapshot-prefs-player-{i}", name=f"P{i}") for i in range(8)],
+    )
+    config = LineupConfig(team=team, periods_per_half=[6, 6])
+    config.boolean_preferences["half_split_balance"] = False
+    config.boolean_preferences["power_combo_objective"] = True
+
+    game = solve_team_lineup(team, config=config)
+
+    assert game is not None
+    snapshot = game.lineup_spins[0].config_snapshot
+    assert snapshot is not None
+    assert snapshot["boolean_preferences"] == {"half_split_balance": False, "power_combo_objective": True}
+
+
 def test_spin_show_with_stats_renders_co_play_table() -> None:
     runner = CliRunner()
     team_repo = SQLiteTeamRepository()
     game_repo = SQLiteGameRepository()
-    team = Team(id="cli-stats-team", name="Stats Team", players=[Player(id="cli-stats-player", name="Ace")])
+    team = Team(
+        id="cli-stats-team", user_id="admin-001", name="Stats Team", players=[Player(id="cli-stats-player", name="Ace")]
+    )
     team_repo.save(team)
 
-    game = Game(id="cli-stats-game", team_id=team.id, date="stats-day", lineup_spins=[])
+    game = Game(id="cli-stats-game", user_id="admin-001", team_id=team.id, date="stats-day", lineup_spins=[])
     spin = LineupSpin(
         id="cli-stats-spin",
         number=1,
@@ -464,10 +577,12 @@ def test_spin_list_includes_run_timestamp() -> None:
     runner = CliRunner()
     team_repo = SQLiteTeamRepository()
     game_repo = SQLiteGameRepository()
-    team = Team(id="cli-list-team", name="List Team", players=[Player(id="cli-list-player", name="Ace")])
+    team = Team(
+        id="cli-list-team", user_id="admin-001", name="List Team", players=[Player(id="cli-list-player", name="Ace")]
+    )
     team_repo.save(team)
 
-    game = Game(id="cli-list-game", team_id=team.id, date="list-day", lineup_spins=[])
+    game = Game(id="cli-list-game", user_id="admin-001", team_id=team.id, date="list-day", lineup_spins=[])
     spin = LineupSpin(
         id="cli-list-spin",
         number=1,
@@ -524,10 +639,12 @@ def test_prune_spin_command_deletes_all_spins_after_confirmation() -> None:
     runner = CliRunner()
     team_repo = SQLiteTeamRepository()
     game_repo = SQLiteGameRepository()
-    team = Team(id="cli-prune-team", name="Prune Team", players=[Player(id="cli-prune-player", name="Ace")])
+    team = Team(
+        id="cli-prune-team", user_id="admin-001", name="Prune Team", players=[Player(id="cli-prune-player", name="Ace")]
+    )
     team_repo.save(team)
 
-    game = Game(id="cli-prune-game", team_id=team.id, date="prune-day", lineup_spins=[])
+    game = Game(id="cli-prune-game", user_id="admin-001", team_id=team.id, date="prune-day", lineup_spins=[])
     game.add_spin(LineupSpin(id="cli-prune-spin-1", number=1, players=[Player(id="cli-prune-player", name="Ace")]))
     game.add_spin(LineupSpin(id="cli-prune-spin-2", number=2, players=[Player(id="cli-prune-player", name="Ace")]))
     game_repo.save(game)
@@ -536,7 +653,7 @@ def test_prune_spin_command_deletes_all_spins_after_confirmation() -> None:
     assert result.exit_code == 0
     assert "Are you sure?" in result.stdout
 
-    updated_game = game_repo.get(game.id)
+    updated_game = game_repo.get("admin-001", game.id)
     assert updated_game is not None
     assert updated_game.lineup_spins == []
 
@@ -545,10 +662,15 @@ def test_delete_spin_command_removes_selected_spin_after_confirmation() -> None:
     runner = CliRunner()
     team_repo = SQLiteTeamRepository()
     game_repo = SQLiteGameRepository()
-    team = Team(id="cli-delete-team", name="Delete Team", players=[Player(id="cli-delete-player", name="Ace")])
+    team = Team(
+        id="cli-delete-team",
+        user_id="admin-001",
+        name="Delete Team",
+        players=[Player(id="cli-delete-player", name="Ace")],
+    )
     team_repo.save(team)
 
-    game = Game(id="cli-delete-game", team_id=team.id, date="delete-day", lineup_spins=[])
+    game = Game(id="cli-delete-game", user_id="admin-001", team_id=team.id, date="delete-day", lineup_spins=[])
     game.add_spin(LineupSpin(id="cli-delete-spin-1", number=1, players=[Player(id="cli-delete-player", name="Ace")]))
     game.add_spin(LineupSpin(id="cli-delete-spin-2", number=2, players=[Player(id="cli-delete-player", name="Ace")]))
     game_repo.save(game)
@@ -557,7 +679,7 @@ def test_delete_spin_command_removes_selected_spin_after_confirmation() -> None:
     assert result.exit_code == 0
     assert "Are you sure?" in result.stdout
 
-    updated_game = game_repo.get(game.id)
+    updated_game = game_repo.get("admin-001", game.id)
     assert updated_game is not None
     assert len(updated_game.lineup_spins) == 1
     assert updated_game.lineup_spins[0].number == 1

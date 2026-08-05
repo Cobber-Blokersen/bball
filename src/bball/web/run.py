@@ -1,6 +1,8 @@
 """Development and production entry point."""
+
 import os
 import sys
+
 import uvicorn
 
 

@@ -9,7 +9,13 @@ from typing import Any
 from ortools.sat.python.cp_model import FEASIBLE, OPTIMAL, CpModel, CpSolver
 from ortools.sat.python.cp_model_helper import CpSolverStatus
 
-from .models import Game, LineupConfig, LineupSpin, Player, Team
+from .models import (
+    Game,
+    LineupConfig,
+    LineupSpin,
+    Player,
+    Team,
+)
 from .repositories import GameRepository
 
 
@@ -307,10 +313,48 @@ def add_no_consecutive_off_constraints(
     num_players: int,
     num_periods: int,
 ) -> None:
-    """Prevent any player from being off court in two consecutive periods."""
+    """Require that no player is off court in two consecutive periods (hard rule)."""
     for player_idx in range(num_players):
         for period_idx in range(num_periods - 1):
             model.add(is_on_court[(player_idx, period_idx)] + is_on_court[(player_idx, period_idx + 1)] >= 1)
+
+
+def add_no_consecutive_off_objective(
+    model: CpModel,
+    is_on_court: dict[tuple[int, int], Any],
+    num_players: int,
+    num_periods: int,
+) -> list[Any]:
+    """Softly penalize any player sitting out two consecutive periods."""
+    consecutive_off_flags = []
+    for player_idx in range(num_players):
+        for period_idx in range(num_periods - 1):
+            both_off = model.new_bool_var(f"consecutive_off_p{player_idx}_t{period_idx}")
+            on_now = is_on_court[(player_idx, period_idx)]
+            on_next = is_on_court[(player_idx, period_idx + 1)]
+            model.add(both_off == 1).only_enforce_if([on_now.Not(), on_next.Not()])
+            model.add(both_off == 0).only_enforce_if([on_now])
+            model.add(both_off == 0).only_enforce_if([on_next])
+            consecutive_off_flags.append(both_off)
+    return consecutive_off_flags
+
+
+def add_no_consecutive_off_rules(
+    model: CpModel,
+    is_on_court: dict[tuple[int, int], Any],
+    num_players: int,
+    num_periods: int,
+    mode: str,
+) -> list[Any]:
+    """Apply the configured back-to-back rests policy: hard rule, soft penalty, or nothing."""
+    if mode == "enforced":
+        add_no_consecutive_off_constraints(model, is_on_court, num_players, num_periods)
+        return []
+    if mode == "preferred":
+        return add_no_consecutive_off_objective(model, is_on_court, num_players, num_periods)
+    if mode != "off":
+        raise ValueError(f"Unknown no_consecutive_off_mode: {mode!r}")
+    return []
 
 
 def add_starting_lineup_constraints(
@@ -363,13 +407,61 @@ def add_transition_constraints(
     num_periods: int,
     periods_per_half: list[int],
 ) -> None:
-    """Link the start of the second half and the end of the game to the opening-period state."""
+    """Require each player to anchor the opening period or the half break, and the opening or final period."""
     second_half_start = periods_per_half[0]
     for player_idx in range(num_players):
         model.add_bool_or([is_on_court[(player_idx, 0)], is_on_court[(player_idx, second_half_start)]])
 
     for player_idx in range(num_players):
         model.add_bool_or([is_on_court[(player_idx, 0)], is_on_court[(player_idx, num_periods - 1)]])
+
+
+def add_transition_constraints_objective(
+    model: CpModel,
+    is_on_court: dict[tuple[int, int], Any],
+    num_players: int,
+    num_periods: int,
+    periods_per_half: list[int],
+) -> list[Any]:
+    """Softly penalize players who fail to anchor the opening and closing periods."""
+    violation_flags = []
+    second_half_start = periods_per_half[0]
+    for player_idx in range(num_players):
+        on_opening = is_on_court[(player_idx, 0)]
+        on_half_start = is_on_court[(player_idx, second_half_start)]
+        miss_half_start = model.new_bool_var(f"transition_miss_half_p{player_idx}")
+        model.add(miss_half_start == 1).only_enforce_if([on_opening.Not(), on_half_start.Not()])
+        model.add(miss_half_start == 0).only_enforce_if([on_opening])
+        model.add(miss_half_start == 0).only_enforce_if([on_half_start])
+        violation_flags.append(miss_half_start)
+
+        on_final = is_on_court[(player_idx, num_periods - 1)]
+        miss_final = model.new_bool_var(f"transition_miss_final_p{player_idx}")
+        model.add(miss_final == 1).only_enforce_if([on_opening.Not(), on_final.Not()])
+        model.add(miss_final == 0).only_enforce_if([on_opening])
+        model.add(miss_final == 0).only_enforce_if([on_final])
+        violation_flags.append(miss_final)
+    return violation_flags
+
+
+def add_transition_constraints_rules(
+    model: CpModel,
+    is_on_court: dict[tuple[int, int], Any],
+    num_players: int,
+    num_periods: int,
+    periods_per_half: list[int],
+    *,
+    mode: str,
+) -> list[Any]:
+    """Apply the configured anchor-opening-and-closing-periods policy: hard rule, soft penalty, or nothing."""
+    if mode == "enforced":
+        add_transition_constraints(model, is_on_court, num_players, num_periods, periods_per_half)
+        return []
+    if mode == "preferred":
+        return add_transition_constraints_objective(model, is_on_court, num_players, num_periods, periods_per_half)
+    if mode != "off":
+        raise ValueError(f"Unknown transition_constraints_mode: {mode!r}")
+    return []
 
 
 def add_power_combo_objective(
@@ -406,12 +498,19 @@ def add_power_combo_objective(
 def set_objective(
     model: CpModel,
     off_balance_penalties: list[Any],
+    consecutive_off_penalties: list[Any],
+    transition_penalties: list[Any],
     power_combo_period_flags: list[Any],
 ) -> None:
-    """Set the weighted objective for balance and preferred power-combo periods."""
+    """Set the weighted objective for balance, rest, transition, and preferred power-combo periods."""
     primary_weight = 100
     secondary_weight = 5
-    model.maximize(primary_weight * (-sum(off_balance_penalties)) + secondary_weight * sum(power_combo_period_flags))
+    model.maximize(
+        primary_weight * (-sum(off_balance_penalties))
+        + secondary_weight * (-sum(consecutive_off_penalties))
+        + secondary_weight * (-sum(transition_penalties))
+        + secondary_weight * sum(power_combo_period_flags)
+    )
 
 
 def solve_model(model: CpModel, time_limit: float = 60.0) -> tuple[CpSolver, CpSolverStatus]:
@@ -495,7 +594,7 @@ def build_solution_snapshot(  # noqa: PLR0917
     }
 
 
-def solve_team_lineup(  # noqa: PLR0917
+def solve_team_lineup(  # noqa: PLR0915, PLR0917
     team: Team,
     away_player_names: list[str] | None = None,
     requested_start_players: list[str] | None = None,
@@ -543,14 +642,25 @@ def solve_team_lineup(  # noqa: PLR0917
     add_pairwise_playtime_balance_constraints(model, num_players, num_periods, total_periods_played)
 
     off_balance_penalties: list[Any] = []
+    consecutive_off_penalties: list[Any] = []
 
     if config.boolean_preferences["half_split_balance"]:
         off_balance_penalties = add_half_split_balance_constraints(
             model, is_on_court, num_players, num_periods, config.periods_per_half
         )
 
-    if config.boolean_preferences["no_consecutive_off"]:
-        add_no_consecutive_off_constraints(model, is_on_court, num_players, num_periods)
+    consecutive_off_penalties = add_no_consecutive_off_rules(
+        model, is_on_court, num_players, num_periods, config.no_consecutive_off_mode
+    )
+
+    transition_penalties = add_transition_constraints_rules(
+        model,
+        is_on_court,
+        num_players,
+        num_periods,
+        config.periods_per_half,
+        mode=config.transition_constraints_mode,
+    )
 
     # No config preference required - just don't add starting players if none are specified
     add_starting_lineup_constraints(model, is_on_court, active_players, starting_lineup)
@@ -571,9 +681,6 @@ def solve_team_lineup(  # noqa: PLR0917
         never_on_first_period_players,
     )
 
-    if config.boolean_preferences["transition_constraints"]:
-        add_transition_constraints(model, is_on_court, num_players, num_periods, config.periods_per_half)
-
     if config.boolean_preferences["power_combo_objective"]:
         power_combo_period_flags = add_power_combo_objective(
             model, is_on_court, active_power_combos, active_player_indices, num_periods
@@ -581,7 +688,9 @@ def solve_team_lineup(  # noqa: PLR0917
     else:
         power_combo_period_flags = []
 
-    set_objective(model, off_balance_penalties, power_combo_period_flags)
+    set_objective(
+        model, off_balance_penalties, consecutive_off_penalties, transition_penalties, power_combo_period_flags
+    )
 
     solver, status = solve_model(model)
     if status in (OPTIMAL, FEASIBLE):
@@ -626,6 +735,9 @@ def solve_team_lineup(  # noqa: PLR0917
                     "periods_per_half": list(config.periods_per_half),
                     "on_court_per_period": config.on_court_per_period,
                     "minutes_per_half": config.minutes_per_half,
+                    "boolean_preferences": dict(config.boolean_preferences),
+                    "no_consecutive_off_mode": config.no_consecutive_off_mode,
+                    "transition_constraints_mode": config.transition_constraints_mode,
                 },
                 away_players=list(away_player_names),
             )
@@ -655,6 +767,9 @@ def solve_team_lineup(  # noqa: PLR0917
                     "periods_per_half": list(config.periods_per_half),
                     "on_court_per_period": config.on_court_per_period,
                     "minutes_per_half": config.minutes_per_half,
+                    "boolean_preferences": dict(config.boolean_preferences),
+                    "no_consecutive_off_mode": config.no_consecutive_off_mode,
+                    "transition_constraints_mode": config.transition_constraints_mode,
                 },
                 away_players=list(away_player_names),
             )

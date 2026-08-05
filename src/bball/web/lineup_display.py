@@ -1,10 +1,18 @@
 """Shared utilities for rendering a lineup spin into template-ready data."""
+
 from __future__ import annotations
 
 from itertools import combinations
 from typing import Any
 
-from ..models import BOOLEAN_PREFERENCE_DEFINITIONS, LineupSpin
+from ..models import (
+    BOOLEAN_PREFERENCE_DEFINITIONS,
+    NO_CONSECUTIVE_OFF_MODE_DEFAULT,
+    TRANSITION_CONSTRAINTS_MODE_DEFAULT,
+    LineupSpin,
+    get_no_consecutive_off_mode_options,
+    get_transition_constraints_mode_options,
+)
 
 
 def build_spin_display(spin: LineupSpin) -> dict[str, Any]:
@@ -54,10 +62,16 @@ def build_spin_display(spin: LineupSpin) -> dict[str, Any]:
 
     # Preference labels
     pref_defs = {d.key: d.name for d in BOOLEAN_PREFERENCE_DEFINITIONS}
-    prefs = [
-        {"name": pref_defs.get(k, k), "enabled": v}
-        for k, v in config.get("boolean_preferences", {}).items()
-    ]
+    prefs = [{"name": pref_defs.get(k, k), "enabled": v} for k, v in config.get("boolean_preferences", {}).items()]
+
+    mode = config.get("no_consecutive_off_mode", NO_CONSECUTIVE_OFF_MODE_DEFAULT)
+    mode_name = next((option.name for option in get_no_consecutive_off_mode_options() if option.value == mode), mode)
+
+    transition_mode = config.get("transition_constraints_mode", TRANSITION_CONSTRAINTS_MODE_DEFAULT)
+    transition_mode_name = next(
+        (option.name for option in get_transition_constraints_mode_options() if option.value == transition_mode),
+        transition_mode,
+    )
 
     return {
         "solved": True,
@@ -69,4 +83,8 @@ def build_spin_display(spin: LineupSpin) -> dict[str, Any]:
         "co_play": co_play,
         "config": config,
         "prefs": prefs,
+        "no_consecutive_off_mode": mode,
+        "no_consecutive_off_mode_name": mode_name,
+        "transition_constraints_mode": transition_mode,
+        "transition_constraints_mode_name": transition_mode_name,
     }
