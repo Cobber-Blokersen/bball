@@ -6,7 +6,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
-    from .repositories import GameRepository, PlayerRepository, TeamRepository
+    from .repositories import GameRepository, PlayerRepository, TeamRepository, UserRepository
 
 DATA_DIR = Path(__file__).resolve().parents[2] / "data" / "sqlite"
 DB_PATH = DATA_DIR / "bball.sqlite3"
@@ -20,6 +20,7 @@ def ensure_db_dir() -> None:
 
 @dataclass(frozen=True)
 class RepositoryClasses:
+    user: type[UserRepository]
     player: type[PlayerRepository]
     team: type[TeamRepository]
     game: type[GameRepository]
@@ -30,6 +31,7 @@ def get_repository_classes() -> RepositoryClasses:
     if REPOSITORY_BACKEND == "inmemory":
         module = import_module(f"{__package__}.repositories_inmemory")
         return RepositoryClasses(
+            user=module.InMemoryUserRepository,
             player=module.InMemoryPlayerRepository,
             team=module.InMemoryTeamRepository,
             game=module.InMemoryGameRepository,
@@ -37,6 +39,7 @@ def get_repository_classes() -> RepositoryClasses:
 
     module = import_module(f"{__package__}.repositories_sqlite")
     return RepositoryClasses(
+        user=module.SQLiteUserRepository,
         player=module.SQLitePlayerRepository,
         team=module.SQLiteTeamRepository,
         game=module.SQLiteGameRepository,

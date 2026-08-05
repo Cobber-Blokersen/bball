@@ -7,8 +7,73 @@ from datetime import UTC, datetime
 from pathlib import Path
 
 from . import settings
-from .models import Game, LineupConfig, LineupSpin, Player, Team, build_default_boolean_preferences
-from .repositories import GameRepository, PlayerRepository, TeamRepository
+from .models import Game, LineupConfig, LineupSpin, Player, Team, User, build_default_boolean_preferences
+from .repositories import GameRepository, PlayerRepository, TeamRepository, UserRepository
+
+
+class SQLiteUserRepository(UserRepository):
+    def __init__(self, db_path: str | None = None) -> None:
+        self.db_path = str(db_path or settings.DB_PATH)
+        self.initialize()
+
+    def _connect(self) -> sqlite3.Connection:
+        for _ in range(20):
+            try:
+                conn = sqlite3.connect(self.db_path, timeout=30.0)
+                conn.execute("PRAGMA busy_timeout = 30000")
+                conn.execute("PRAGMA journal_mode = WAL")
+                return conn
+            except sqlite3.OperationalError:
+                time.sleep(0.25)
+        return sqlite3.connect(self.db_path, timeout=30.0)
+
+    def initialize(self) -> None:
+        settings.ensure_db_dir()
+        with self._connect() as conn:
+            conn.execute(
+                "CREATE TABLE IF NOT EXISTS users (id TEXT PRIMARY KEY, email TEXT NOT NULL, name TEXT NOT NULL, "
+                "role TEXT NOT NULL, auth_type TEXT NOT NULL)"
+            )
+            conn.commit()
+
+    def _init_db(self) -> None:
+        self.initialize()
+
+    def get(self, user_id: str) -> User | None:
+        with self._connect() as conn:
+            row = conn.execute(
+                "SELECT id, email, name, role, auth_type FROM users WHERE id = ?",
+                (user_id,),
+            ).fetchone()
+        if row:
+            return User(id=row[0], email=row[1], name=row[2], role=row[3], auth_type=row[4])
+        return None
+
+    def list(self) -> list[User]:
+        with self._connect() as conn:
+            rows = conn.execute("SELECT id, email, name, role, auth_type FROM users ORDER BY name").fetchall()
+        return [User(id=row[0], email=row[1], name=row[2], role=row[3], auth_type=row[4]) for row in rows]
+
+    def save(self, user: User) -> None:
+        with self._connect() as conn:
+            conn.execute(
+                "INSERT OR REPLACE INTO users (id, email, name, role, auth_type) VALUES (?, ?, ?, ?, ?)",
+                (user.id, user.email, user.name, user.role, user.auth_type),
+            )
+            conn.commit()
+
+    def delete(self, user_id: str) -> None:
+        with self._connect() as conn:
+            conn.execute("DELETE FROM users WHERE id = ?", (user_id,))
+            conn.commit()
+
+    def reset(self) -> None:
+        with self._connect() as conn:
+            conn.execute("DELETE FROM users")
+            conn.commit()
+
+    def db_exists(self) -> bool:
+        return Path(self.db_path).exists()
 
 
 class SQLitePlayerRepository(PlayerRepository):

@@ -8,7 +8,7 @@ def run_local():
     """Run the application locally with uvicorn."""
     uvicorn.run(
         "src.bball.web.app:app",
-        host="127.0.0.1",
+        host="0.0.0.0",
         port=8000,
         reload=True,
     )

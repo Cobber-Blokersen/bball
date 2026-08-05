@@ -2,9 +2,39 @@ from __future__ import annotations
 
 from abc import ABC, abstractmethod
 
-from .models import Game, Player, Team
+from .models import Game, Player, Team, User
 
-__all__ = ["GameRepository", "PlayerRepository", "TeamRepository"]
+__all__ = ["GameRepository", "PlayerRepository", "TeamRepository", "UserRepository"]
+
+
+class UserRepository(ABC):
+    @abstractmethod
+    def get(self, user_id: str) -> User | None:
+        raise NotImplementedError
+
+    @abstractmethod
+    def list(self) -> list[User]:
+        raise NotImplementedError
+
+    @abstractmethod
+    def save(self, user: User) -> None:
+        raise NotImplementedError
+
+    @abstractmethod
+    def delete(self, user_id: str) -> None:
+        raise NotImplementedError
+
+    @abstractmethod
+    def initialize(self) -> None:
+        raise NotImplementedError
+
+    @abstractmethod
+    def reset(self) -> None:
+        raise NotImplementedError
+
+    @abstractmethod
+    def db_exists(self) -> bool:
+        raise NotImplementedError
 
 
 class PlayerRepository(ABC):

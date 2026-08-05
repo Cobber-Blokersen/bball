@@ -80,6 +80,7 @@ def get_repository_classes() -> settings.RepositoryClasses:
 def create_database() -> None:
     """Create or initialize the configured storage backend."""
     repositories = get_repository_classes()
+    repositories.user().initialize()
     repositories.player().initialize()
     repositories.team().initialize()
     repositories.game().initialize()
@@ -95,10 +96,12 @@ def truncate_database() -> None:
         raise typer.Exit()
 
     repositories = get_repository_classes()
+    user_repo = repositories.user()
     player_repo = repositories.player()
     team_repo = repositories.team()
     game_repo = repositories.game()
 
+    user_repo.reset()
     player_repo.reset()
     team_repo.reset()
     game_repo.reset()

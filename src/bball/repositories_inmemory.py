@@ -1,7 +1,33 @@
 from __future__ import annotations
 
-from .models import Game, Player, Team
-from .repositories import GameRepository, PlayerRepository, TeamRepository
+from .models import Game, Player, Team, User
+from .repositories import GameRepository, PlayerRepository, TeamRepository, UserRepository
+
+
+class InMemoryUserRepository(UserRepository):
+    def __init__(self, users: list[User] | None = None) -> None:
+        self._users = {user.id: user for user in (users or [])}
+
+    def get(self, user_id: str) -> User | None:
+        return self._users.get(user_id)
+
+    def list(self) -> list[User]:
+        return list(self._users.values())
+
+    def save(self, user: User) -> None:
+        self._users[user.id] = user
+
+    def delete(self, user_id: str) -> None:
+        self._users.pop(user_id, None)
+
+    def initialize(self) -> None:
+        return None
+
+    def reset(self) -> None:
+        self._users.clear()
+
+    def db_exists(self) -> bool:
+        return True
 
 
 class InMemoryPlayerRepository(PlayerRepository):

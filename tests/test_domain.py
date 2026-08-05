@@ -10,7 +10,12 @@ from typer.testing import CliRunner
 from bball import settings
 from bball.cli import app, build_render_data_from_solution_snapshot, render_solution_display_data
 from bball.models import Game, LineupConfig, LineupSpin, Player, Team
-from bball.repositories_inmemory import InMemoryGameRepository, InMemoryPlayerRepository, InMemoryTeamRepository
+from bball.repositories_inmemory import (
+    InMemoryGameRepository,
+    InMemoryPlayerRepository,
+    InMemoryTeamRepository,
+    InMemoryUserRepository,
+)
 from bball.repositories_sqlite import SQLiteGameRepository, SQLitePlayerRepository, SQLiteTeamRepository
 from bball.solver import build_starting_lineup
 from tests.fixtures import build_default_team
@@ -563,6 +568,7 @@ def test_settings_can_select_repository_backend(monkeypatch: MonkeyPatch) -> Non
 
     repo_classes = settings.get_repository_classes()
 
+    assert repo_classes.user is InMemoryUserRepository
     assert repo_classes.player is InMemoryPlayerRepository
     assert repo_classes.team is InMemoryTeamRepository
     assert repo_classes.game is InMemoryGameRepository
@@ -607,6 +613,7 @@ def test_system_db_create_uses_repository_initialization(monkeypatch: MonkeyPatc
     monkeypatch.setattr(
         "bball.cli.get_repository_classes",
         lambda: settings.RepositoryClasses(
+            user=FakeRepository,  # type: ignore
             player=FakeRepository,  # type: ignore
             team=FakeRepository,  # type: ignore
             game=FakeRepository,  # type: ignore
@@ -635,10 +642,12 @@ def test_system_db_truncate_deletes_all_rows_after_confirmation(monkeypatch: Mon
     assert "Truncated database" in result.stdout
 
     with sqlite3.connect(db_path) as conn:
+        user_count = conn.execute("SELECT COUNT(*) FROM users").fetchone()[0]
         team_count = conn.execute("SELECT COUNT(*) FROM teams").fetchone()[0]
         game_count = conn.execute("SELECT COUNT(*) FROM games").fetchone()[0]
         player_count = conn.execute("SELECT COUNT(*) FROM players").fetchone()[0]
 
+    assert user_count == 0
     assert team_count == 0
     assert game_count == 0
     assert player_count == 0
