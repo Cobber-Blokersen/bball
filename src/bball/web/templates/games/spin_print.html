@@ -48,6 +48,8 @@
         .period-num { color: #555; font-weight: 700; width: 48px; }
         .period-time { color: #555; width: 60px; font-variant-numeric: tabular-nums; }
         .off-cell { color: #999; }
+        .table-scroll { overflow-x: auto; -webkit-overflow-scrolling: touch; }
+        .table-scroll table { min-width: 480px; }
         .no-solution { padding: 40px 0; text-align: center; color: #b00020; }
         .no-print {
             position: absolute;
@@ -77,6 +79,7 @@
 
     {% if display.solved %}
     <div class="section-label">First Half</div>
+    <div class="table-scroll">
     <table>
         <thead><tr>
             <th style="width:48px">#</th>
@@ -95,8 +98,10 @@
         {% endfor %}
         </tbody>
     </table>
+    </div>
 
     <div class="section-label">Second Half</div>
+    <div class="table-scroll">
     <table>
         <thead><tr>
             <th style="width:48px">#</th>
@@ -115,6 +120,7 @@
         {% endfor %}
         </tbody>
     </table>
+    </div>
     {% else %}
     <div class="no-solution">No solution found ({{ display.status }}).</div>
     {% endif %}

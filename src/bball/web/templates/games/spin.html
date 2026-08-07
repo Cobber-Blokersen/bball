@@ -106,6 +106,15 @@
 .players-cell { line-height: 1.7; }
 .off-cell { color: #bbb; line-height: 1.7; }
 
+@media (max-width: 768px) {
+    .period-table th,
+    .period-table td {
+        padding: 0.5rem 0.6rem;
+        white-space: nowrap;
+    }
+    .period-table th { font-size: 0.72rem; }
+}
+
 /* Clickable player spans */
 .player {
     display: inline-block;
@@ -218,6 +227,7 @@
 
     <!-- First half -->
     <p class="section-label">First Half</p>
+    <div class="table-scroll">
     <table class="period-table">
         <thead><tr>
             <th style="width:48px">#</th>
@@ -236,9 +246,11 @@
         {% endfor %}
         </tbody>
     </table>
+    </div>
 
     <!-- Second half -->
     <p class="section-label">Second Half</p>
+    <div class="table-scroll">
     <table class="period-table">
         <thead><tr>
             <th style="width:48px">#</th>
@@ -257,12 +269,14 @@
         {% endfor %}
         </tbody>
     </table>
+    </div>
 
     <!-- Stats + Config -->
     <div class="bottom-grid">
         <!-- Left: summary + co-play -->
         <div>
             <p class="section-label" style="margin-top:0;">Player Summary</p>
+            <div class="table-scroll">
             <table class="summary-table">
                 <thead><tr><th>Player</th><th>On</th><th>Off</th><th></th></tr></thead>
                 <tbody>
@@ -277,9 +291,11 @@
                 {% endfor %}
                 </tbody>
             </table>
+            </div>
 
             {% if display.co_play %}
             <p class="section-label" style="margin-top:1.5rem;">Player Pair Stats</p>
+            <div class="table-scroll">
             <table class="coplay-table">
                 <thead><tr><th>Pair</th><th>Periods Together</th></tr></thead>
                 <tbody>
@@ -295,6 +311,7 @@
                 {% endfor %}
                 </tbody>
             </table>
+            </div>
             {% endif %}
         </div>
 

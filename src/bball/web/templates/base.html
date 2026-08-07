@@ -15,6 +15,7 @@
             background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
             min-height: 100vh;
             color: #333;
+            -webkit-text-size-adjust: 100%;
         }
         nav {
             background-color: rgba(0, 0, 0, 0.7);
@@ -153,6 +154,53 @@
         .grid-item .button {
             flex: 1;
             text-align: center;
+        }
+
+        /* Horizontally scrollable table wrapper (used by pages with wide tables) */
+        .table-scroll {
+            overflow-x: auto;
+            -webkit-overflow-scrolling: touch;
+        }
+        .table-scroll table {
+            width: 100%;
+            min-width: 320px;
+        }
+
+        /* Mobile optimisations — desktop layout is untouched above 768px */
+        @media (max-width: 768px) {
+            nav {
+                flex-wrap: wrap;
+                gap: 0.5rem;
+                padding: 0.75rem 1rem;
+            }
+            nav > div {
+                display: flex;
+                flex-wrap: wrap;
+                gap: 0.25rem;
+            }
+            nav a {
+                margin-left: 0;
+                padding: 0.4rem 0.65rem;
+                font-size: 0.95rem;
+            }
+            nav h1 {
+                font-size: 1.25rem;
+            }
+            .container {
+                margin: 1rem auto;
+                padding: 0 1rem;
+            }
+            .card {
+                padding: 1.25rem;
+                border-radius: 8px;
+            }
+            h2 {
+                font-size: 1.25rem;
+            }
+            /* Prevent iOS auto-zoom when tapping form controls */
+            input, select, textarea, button {
+                font-size: 16px;
+            }
         }
         {% block extra_css %}{% endblock %}
     </style>
