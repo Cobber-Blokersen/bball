@@ -12,6 +12,7 @@ dependencies = [
   "typer",
   "fastapi",
   "uvicorn[standard]",
+  "gunicorn>=22.0.0",
   "jinja2",
   "authlib",
   "pydantic",
@@ -47,3 +48,6 @@ indent-style = "space"
 
 [tool.pytest.ini_options]
 addopts = "-v -v -v -x --capture=tee-sys"
+
+[project.scripts]
+bball = "bball.web.run:main"

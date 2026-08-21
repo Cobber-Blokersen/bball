@@ -1,3 +1,4 @@
+from datetime import datetime
 import sqlite3
 import uuid
 from pathlib import Path
@@ -7,7 +8,7 @@ from pytest import CaptureFixture, MonkeyPatch
 from typer.testing import CliRunner
 
 from bball import settings
-from bball.cli import app, build_render_data_from_solution_snapshot, render_solution_display_data
+from bball.cli import app, build_co_play_stats, build_render_data_from_solution_snapshot, render_solution_display_data
 from bball.models import Game, LineupConfig, LineupSpin, Player, Team
 from bball.repositories_inmemory import (
     InMemoryGameRepository,
@@ -790,3 +791,53 @@ def test_render_solution_display_data_renders_solver_tables(capsys: CaptureFixtu
     assert "Second Half" in output
     assert "Player Summary" in output
     assert "Indie" in output
+
+
+def test_power_combo_effectiveness() -> None:
+    player_names = ["Ace", "Bo", "Cara", "Dani", "Eli", "Finn", "Garry", "Heidi"]
+    power_combos = [["Ace", "Heidi"], ["Bo", "Garry"]]
+
+    team = Team(
+        id="power-combo-team",
+        user_id="admin-001",
+        name="Power Combo Team",
+        players=[Player(id=name.lower(), name=name) for name in player_names]
+    )
+    config = LineupConfig(team=team, periods_per_half=[6, 6])
+    config.boolean_preferences["half_split_balance"] = True
+    config.boolean_preferences["power_combo_objective"] = True
+    config.required_final_period_players = ["Heidi"]
+    config.no_consecutive_off_mode = "enforced"
+    config.transition_constraints_mode = "enforced"
+    config.power_combos = power_combos
+    for _ in range(10):
+        print(_)
+        game = solve_team_lineup(
+            team,
+            away_player_names=[],
+            config=config,
+            game_repo=InMemoryGameRepository(),
+            game_date=datetime.now().isoformat(),
+            user_id="admin-001",
+        )
+        # TODO: Get this out of the CLI!
+        togetherses = build_co_play_stats(game.lineup_spins[0].solution_snapshot)
+        # [("Ace / Heidi", "", 6), ("Bo / Garry", "", 6), ...)]
+
+        max_together = 0
+
+        indexed_pairs = {}
+        co_play_counts = set()
+        for pair in togetherses:
+            co_play_counts.add(pair[2])
+            if pair[2] > max_together:
+                max_together = pair[2]
+            if pair[2] not in indexed_pairs:
+                indexed_pairs[pair[2]] = []
+            indexed_pairs[pair[2]].append(pair[0])
+        co_play_count_list = sorted(list(co_play_counts), reverse=True)
+        penultimate_count = co_play_count_list[1] if len(co_play_count_list) > 1 else 0
+        print(f"Max together: {max_together}, pairs: {indexed_pairs[max_together]}")
+        print(f"Penultimate together: {penultimate_count}, pairs: {indexed_pairs[penultimate_count]}")
+        assert "Ace / Heidi" in indexed_pairs[max_together] or "Ace / Heidi" in indexed_pairs[penultimate_count]
+        assert "Bo / Garry" in indexed_pairs[max_together] or "Bo / Garry" in indexed_pairs[penultimate_count]
